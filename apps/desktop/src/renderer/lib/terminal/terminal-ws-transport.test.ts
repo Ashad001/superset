@@ -268,6 +268,26 @@ describe("PTY output write coalescing", () => {
 		]);
 	});
 
+	test("notifies exit listeners with the PTY exit status", () => {
+		const { transport, socket } = connectWithRecordingTerminal();
+		const seen: Array<{ exitCode: number; signal: number }> = [];
+		transport.exitListeners.add((exit) => seen.push(exit));
+
+		socket.message(JSON.stringify({ type: "exit", exitCode: 3, signal: 9 }));
+
+		expect(seen).toEqual([{ exitCode: 3, signal: 9 }]);
+	});
+
+	test("does not notify exit listeners when the socket merely drops", () => {
+		const { transport, socket } = connectWithRecordingTerminal();
+		const seen: Array<{ exitCode: number; signal: number }> = [];
+		transport.exitListeners.add((exit) => seen.push(exit));
+
+		socket.drop(1006, "host restart");
+
+		expect(seen).toEqual([]);
+	});
+
 	test("does not flush pending PTY bytes for non-writing control messages", () => {
 		const { writes, socket } = connectWithRecordingTerminal();
 
