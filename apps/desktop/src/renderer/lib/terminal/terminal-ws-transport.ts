@@ -16,6 +16,11 @@ export type ConnectionState = "disconnected" | "connecting" | "open" | "closed";
 
 export type TerminalLogLevel = "info" | "warn" | "error";
 
+export type TerminalExitListener = (exit: {
+	exitCode: number;
+	signal: number;
+}) => void;
+
 export interface TerminalLogEntry {
 	id: number;
 	timestamp: number;
@@ -48,6 +53,12 @@ export interface TerminalTransport {
 	 */
 	logs: TerminalLogEntry[];
 	logListeners: Set<() => void>;
+	/**
+	 * Notified when the server reports the PTY exited, so a pane can react to a
+	 * shell ending (e.g. close itself on a clean `exit`). Not fired for
+	 * transport-level closes — those reconnect.
+	 */
+	exitListeners: Set<TerminalExitListener>;
 	/**
 	 * Why the connection is down, once it has failed enough consecutive attempts
 	 * to be worth surfacing (or access was denied / the session ended). Null
@@ -251,6 +262,7 @@ export function createTransport(): TerminalTransport {
 		titleListeners: new Set(),
 		logs: [],
 		logListeners: new Set(),
+		exitListeners: new Set(),
 		lastDiagnosis: null,
 		_socket: null,
 		_terminal: null,
@@ -574,6 +586,9 @@ function attachSocketListeners(
 			terminal.writeln(
 				`\r\n[terminal] exited with code ${message.exitCode} (signal ${message.signal})`,
 			);
+			for (const listener of transport.exitListeners) {
+				listener({ exitCode: message.exitCode, signal: message.signal });
+			}
 		}
 	});
 
@@ -719,4 +734,5 @@ export function disposeTransport(transport: TerminalTransport) {
 	transport.titleListeners.clear();
 	transport.logs = [];
 	transport.logListeners.clear();
+	transport.exitListeners.clear();
 }
