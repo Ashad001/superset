@@ -268,10 +268,15 @@ describe("PTY output write coalescing", () => {
 		]);
 	});
 
-	test("notifies exit listeners with the PTY exit status", () => {
-		const { transport, socket } = connectWithRecordingTerminal();
+	function recordExits(transport: ReturnType<typeof createTransport>) {
 		const seen: Array<{ exitCode: number; signal: number }> = [];
 		transport.exitListeners.add((exit) => seen.push(exit));
+		return seen;
+	}
+
+	test("notifies exit listeners with the PTY exit status", () => {
+		const { transport, socket } = connectWithRecordingTerminal();
+		const seen = recordExits(transport);
 
 		socket.message(JSON.stringify({ type: "exit", exitCode: 3, signal: 9 }));
 
@@ -280,8 +285,7 @@ describe("PTY output write coalescing", () => {
 
 	test("does not notify exit listeners when the socket merely drops", () => {
 		const { transport, socket } = connectWithRecordingTerminal();
-		const seen: Array<{ exitCode: number; signal: number }> = [];
-		transport.exitListeners.add((exit) => seen.push(exit));
+		const seen = recordExits(transport);
 
 		socket.drop(1006, "host restart");
 
