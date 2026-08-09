@@ -267,6 +267,9 @@ export type V2TerminalPresetRow = z.infer<typeof v2TerminalPresetSchema>;
  *   - "pane"      → open in current tab/pane (file viewer, in-app browser)
  *   - "newTab"    → open in a new tab/pane
  *   - "external"  → open in the external app (editor / system browser)
+ *   - "system"    → hand the file to the OS default handler (Preview for an
+ *                   image, Acrobat for a PDF). File surfaces only; URL and
+ *                   port surfaces already reach the OS via "external".
  *
  * Surfaces:
  *   - fileLinks / urlLinks: links embedded in terminal output and markdown.
@@ -280,7 +283,7 @@ export type V2TerminalPresetRow = z.infer<typeof v2TerminalPresetSchema>;
  *
  * Resolution and labels live in src/renderer/lib/clickPolicy.
  */
-const linkActionSchema = z.enum(["pane", "newTab", "external"]);
+const linkActionSchema = z.enum(["pane", "newTab", "external", "system"]);
 
 export type LinkAction = z.infer<typeof linkActionSchema>;
 

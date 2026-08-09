@@ -9,6 +9,11 @@ import { useLocalHostService } from "renderer/routes/_authenticated/providers/Lo
 export interface OpenInExternalEditorOptions {
 	line?: number;
 	column?: number;
+	/**
+	 * Open with the OS default handler (Preview, Acrobat, …) instead of the
+	 * configured editor. Line/column are ignored — no OS handler takes them.
+	 */
+	defaultApp?: boolean;
 }
 
 export function useOpenInExternalEditor(workspaceId: string) {
@@ -30,6 +35,15 @@ export function useOpenInExternalEditor(workspaceId: string) {
 		(path: string, opts?: OpenInExternalEditorOptions) => {
 			if (workspaceRow?.hostId !== machineId) {
 				toast.error("Can't open remote workspace paths in an external editor");
+				return;
+			}
+			if (opts?.defaultApp) {
+				electronTrpcClient.external.openPath
+					.mutate({ path, worktreePath })
+					.catch((error) => {
+						console.error("Failed to open in default app:", error);
+						toast.error("Failed to open in default app");
+					});
 				return;
 			}
 			electronTrpcClient.external.openFileInEditor

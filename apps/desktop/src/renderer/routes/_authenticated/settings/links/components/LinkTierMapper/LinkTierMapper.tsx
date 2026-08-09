@@ -21,7 +21,10 @@ import { useSettingsSearchQuery } from "renderer/stores/settings-state";
 type SlotValue = LinkAction | "none";
 
 const TIERS: LinkTier[] = ["plain", "shift", "meta", "metaShift"];
-const ACTIONS: LinkAction[] = ["pane", "newTab", "external"];
+// "system" is file-only: the OS handler for a URL is the default browser, which
+// "external" already is.
+const FILE_ACTIONS: LinkAction[] = ["pane", "newTab", "external", "system"];
+const URL_ACTIONS: LinkAction[] = ["pane", "newTab", "external"];
 
 function toSlot(action: LinkAction | null): SlotValue {
 	return action ?? "none";
@@ -83,11 +86,13 @@ export function LinkTierMapper({
 								</SelectTrigger>
 								<SelectContent>
 									<SelectItem value="none">Do nothing</SelectItem>
-									{ACTIONS.map((action) => (
-										<SelectItem key={action} value={action}>
-											{actionLabel(action, surface)}
-										</SelectItem>
-									))}
+									{(surface === "file" ? FILE_ACTIONS : URL_ACTIONS).map(
+										(action) => (
+											<SelectItem key={action} value={action}>
+												{actionLabel(action, surface)}
+											</SelectItem>
+										),
+									)}
 								</SelectContent>
 							</Select>
 						</div>

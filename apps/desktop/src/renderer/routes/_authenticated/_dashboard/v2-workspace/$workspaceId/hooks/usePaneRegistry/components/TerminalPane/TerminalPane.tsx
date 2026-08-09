@@ -283,6 +283,8 @@ export function TerminalPane({
 							line: link.row,
 							column: link.col,
 						});
+					} else if (action === "system") {
+						openInExternalEditor(link.resolvedPath, { defaultApp: true });
 					} else if (action === "newTab") {
 						onOpenFile(link.resolvedPath, true);
 					} else {
