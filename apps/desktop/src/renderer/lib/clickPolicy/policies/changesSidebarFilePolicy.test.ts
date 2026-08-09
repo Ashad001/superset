@@ -67,6 +67,21 @@ describe("changes sidebar file policy", () => {
 		).toBe("external");
 	});
 
+	it("maps the system action to the OS default handler, not the editor", () => {
+		expect(
+			resolveChangesSidebarFileIntent(
+				{ ...map, metaShift: "system" },
+				{ metaKey: true, ctrlKey: false, shiftKey: true },
+			),
+		).toBe("system");
+		expect(
+			tierForChangesSidebarFileIntent(
+				{ ...map, metaShift: "system" },
+				"system",
+			),
+		).toBe("metaShift");
+	});
+
 	it("returns null for unbound tiers", () => {
 		expect(
 			resolveChangesSidebarFileIntent(

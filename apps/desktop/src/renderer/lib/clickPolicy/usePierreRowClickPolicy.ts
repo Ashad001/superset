@@ -12,10 +12,14 @@ interface UsePierreRowClickPolicyOptions {
 	 */
 	onSelectFile: (relativePath: string, openInNewTab?: boolean) => void;
 	/**
-	 * Open the path (file or folder) in the user's external editor. Receives
+	 * Open the path (file or folder) outside the app — the user's external
+	 * editor, or the OS default handler with `{ defaultApp: true }`. Receives
 	 * the row's relative path with any trailing slash stripped.
 	 */
-	openInExternalEditor: (relativePath: string) => void;
+	openInExternalEditor: (
+		relativePath: string,
+		opts?: { defaultApp?: boolean },
+	) => void;
 }
 
 interface UsePierreRowClickPolicyResult {
@@ -90,6 +94,8 @@ export function usePierreRowClickPolicy({
 			e.preventDefault();
 			e.stopPropagation();
 			if (action === "external") openInExternalEditor(trimmed);
+			else if (action === "system")
+				openInExternalEditor(trimmed, { defaultApp: true });
 			else if (action === "newTab") onSelectFile(trimmed, true);
 			else if (action === "pane") onSelectFile(trimmed, false);
 		},

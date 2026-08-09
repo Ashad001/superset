@@ -11,7 +11,8 @@ export type ChangesSidebarFileIntent =
 	| "diff"
 	| "diffNewTab"
 	| "file"
-	| "external";
+	| "external"
+	| "system";
 
 const MODIFIER_TIERS: LinkTier[] = ["shift", "meta", "metaShift"];
 
@@ -21,6 +22,7 @@ function intentFor(
 ): ChangesSidebarFileIntent | null {
 	if (action === null) return null;
 	if (action === "external") return "external";
+	if (action === "system") return "system";
 	if (action === "newTab") return "diffNewTab";
 	return tier === "plain" ? "diff" : "file";
 }
@@ -29,6 +31,7 @@ function shortIntentLabel(intent: ChangesSidebarFileIntent): string {
 	if (intent === "diff") return "diff";
 	if (intent === "diffNewTab") return "diff in new tab";
 	if (intent === "file") return "open file";
+	if (intent === "system") return "default app";
 	return "editor";
 }
 

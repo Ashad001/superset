@@ -7,7 +7,11 @@ interface UsePierreChangesSidebarRowClickPolicyOptions {
 	getFileIntent: (event: ModifierEvent) => ChangesSidebarFileIntent | null;
 	onSelectDiff: (relativePath: string, openInNewTab?: boolean) => void;
 	onOpenFile: (relativePath: string, openInNewTab?: boolean) => void;
-	openInExternalEditor: (relativePath: string) => void;
+	/** `{ defaultApp: true }` hands the path to the OS handler instead. */
+	openInExternalEditor: (
+		relativePath: string,
+		opts?: { defaultApp?: boolean },
+	) => void;
 }
 
 interface UsePierreChangesSidebarRowClickPolicyResult {
@@ -62,6 +66,8 @@ export function usePierreChangesSidebarRowClickPolicy({
 			e.stopPropagation();
 
 			if (intent === "external") openInExternalEditor(trimmed);
+			else if (intent === "system")
+				openInExternalEditor(trimmed, { defaultApp: true });
 			else if (intent === "file") onOpenFile(trimmed, false);
 			else if (intent === "diffNewTab") onSelectDiff(trimmed, true);
 			else if (intent === "diff") onSelectDiff(trimmed, false);
