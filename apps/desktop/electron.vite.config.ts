@@ -17,8 +17,14 @@ import {
 	htmlEnvTransformPlugin,
 } from "./vite/helpers";
 
-// override: true ensures .env values take precedence over inherited env vars
-config({ path: resolve(__dirname, "../../.env"), override: true, quiet: true });
+// override: true ensures .env values take precedence over inherited env vars.
+// SUPERSET_ENV_FILE points release builds at .env.fork (production URLs) so the
+// dev .env — which points at the local Docker stack — isn't baked into an app.
+config({
+	path: resolve(__dirname, process.env.SUPERSET_ENV_FILE ?? "../../.env"),
+	override: true,
+	quiet: true,
+});
 
 const DEV_SERVER_PORT = Number(process.env.DESKTOP_VITE_PORT);
 

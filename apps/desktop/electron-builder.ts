@@ -36,7 +36,7 @@ const config: Configuration = {
 	// Generate latest-mac.yml for auto-update (workflow handles actual upload)
 	publish: {
 		provider: "github",
-		owner: "superset-sh",
+		owner: "Ashad001",
 		repo: "superset",
 	},
 
@@ -109,9 +109,13 @@ const config: Configuration = {
 		...(existsSync(macIconPath) ? { icon: macIconPath } : {}),
 		category: "public.app-category.utilities",
 		target: "default",
-		hardenedRuntime: true,
+		// Personal fork: self-signed identity, no Apple Developer account. Signing
+		// still has to happen — Squirrel.Mac refuses to install an update onto an
+		// unsigned app — but hardened runtime needs a real Developer ID to launch,
+		// and notarization needs one to submit.
+		hardenedRuntime: false,
 		gatekeeperAssess: false,
-		notarize: true,
+		notarize: false,
 		entitlements: join(pkg.resources, "build/entitlements.mac.plist"),
 		entitlementsInherit: join(
 			pkg.resources,
