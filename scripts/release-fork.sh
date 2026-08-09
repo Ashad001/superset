@@ -27,6 +27,10 @@ fi
 
 bun run check:versions
 
+# Rebasing onto upstream moves the lockfile; a build against stale node_modules
+# fails on whatever dependency upstream added since.
+bun install
+
 echo "==> Building Superset $VERSION as $CSC_NAME"
 export SUPERSET_ENV_FILE=../../.env.fork
 bun run --cwd apps/desktop compile:app
