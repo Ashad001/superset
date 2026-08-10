@@ -308,6 +308,16 @@ const DEFAULT_URL_LINKS: LinkTierMap = {
 	metaShift: "external",
 };
 
+// Images pasted into a terminal have no path on screen — only the agent's
+// "[Image #N]" placeholder — so plain click opens them rather than requiring a
+// modifier nobody would guess. "external" hands the file to the OS (Preview).
+const DEFAULT_IMAGE_LINKS: LinkTierMap = {
+	plain: "pane",
+	shift: "newTab",
+	meta: "pane",
+	metaShift: "external",
+};
+
 const LEGACY_SIDEBAR_FILE_LINKS: LinkTierMap = {
 	plain: "pane",
 	shift: "newTab",
@@ -351,6 +361,7 @@ export const v2UserPreferencesSchema = z.object({
 	id: z.literal("preferences"),
 	fileLinks: linkTierMapSchema.default(DEFAULT_LINK_TIER_MAP),
 	urlLinks: linkTierMapSchema.default(DEFAULT_URL_LINKS),
+	imageLinks: linkTierMapSchema.default(DEFAULT_IMAGE_LINKS),
 	sidebarFileLinks: linkTierMapSchema.default(DEFAULT_SIDEBAR_FILE_LINKS),
 	portOpenAction: linkActionSchema.default(DEFAULT_PORT_OPEN_ACTION),
 	terminalPresetsInitialized: z.boolean().default(false),
@@ -379,6 +390,7 @@ export const DEFAULT_V2_USER_PREFERENCES: V2UserPreferencesRow = {
 	id: V2_USER_PREFERENCES_ID,
 	fileLinks: DEFAULT_LINK_TIER_MAP,
 	urlLinks: DEFAULT_URL_LINKS,
+	imageLinks: DEFAULT_IMAGE_LINKS,
 	sidebarFileLinks: DEFAULT_SIDEBAR_FILE_LINKS,
 	portOpenAction: DEFAULT_PORT_OPEN_ACTION,
 	terminalPresetsInitialized: false,
@@ -461,6 +473,7 @@ export function healV2UserPreferences(raw: unknown): V2UserPreferencesRow {
 		urlLinks: shouldMigrateLegacyUrlLinks
 			? DEFAULT_V2_USER_PREFERENCES.urlLinks
 			: { ...DEFAULT_V2_USER_PREFERENCES.urlLinks, ...r.urlLinks },
+		imageLinks: { ...DEFAULT_V2_USER_PREFERENCES.imageLinks, ...r.imageLinks },
 		sidebarFileLinks: shouldMigrateLegacySidebarFileLinks
 			? DEFAULT_V2_USER_PREFERENCES.sidebarFileLinks
 			: sidebarFileLinks,

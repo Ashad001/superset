@@ -146,6 +146,21 @@ export const createExternalRouter = () => {
 				shell.showItemInFolder(input);
 			}),
 
+		/**
+		 * Hand a path to the OS default handler — Preview for an image, Acrobat
+		 * for a PDF. Distinct from openInApp/openFileInEditor, which target a
+		 * specific editor and only reach the OS as a no-editor-configured
+		 * fallback.
+		 */
+		openPath: publicProcedure.input(z.string()).mutation(async ({ input }) => {
+			// openPath resolves with a message instead of rejecting — an
+			// unhandled file type surfaces here, not as a silent no-op.
+			const error = await shell.openPath(input);
+			if (error) {
+				throw new TRPCError({ code: "BAD_REQUEST", message: error });
+			}
+		}),
+
 		saveToDownloads: publicProcedure
 			.input(
 				z.object({

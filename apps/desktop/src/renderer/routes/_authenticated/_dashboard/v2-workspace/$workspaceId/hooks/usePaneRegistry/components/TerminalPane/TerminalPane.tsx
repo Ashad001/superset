@@ -1,4 +1,5 @@
 import type { RendererContext } from "@superset/panes";
+import { toast } from "@superset/ui/sonner";
 import { cn } from "@superset/ui/utils";
 import { workspaceTrpc } from "@superset/workspace-client";
 import "@xterm/xterm/css/xterm.css";
@@ -17,6 +18,7 @@ import {
 	folderIntentLabel,
 	LinkHoverHint,
 	useTerminalFilePolicy,
+	useTerminalImagePolicy,
 	useTerminalUrlPolicy,
 } from "renderer/lib/clickPolicy";
 import {
@@ -35,6 +37,7 @@ import { ScrollToBottomButton } from "renderer/screens/main/components/Workspace
 import { TerminalSearch } from "renderer/screens/main/components/WorkspaceView/ContentView/TabsContent/Terminal/TerminalSearch";
 import { useTheme } from "renderer/stores/theme";
 import { resolveTerminalThemeType } from "renderer/stores/theme/utils";
+import { getImageMimeType } from "shared/file-types";
 import { TerminalAgentResumeBanner } from "./components/TerminalAgentResumeBanner";
 import { TerminalRichInput } from "./components/TerminalRichInput";
 import { useLinkClickHint } from "./hooks/useLinkClickHint";
@@ -62,6 +65,7 @@ export function TerminalPane({
 }: TerminalPaneProps) {
 	const filePolicy = useTerminalFilePolicy();
 	const urlPolicy = useTerminalUrlPolicy();
+	const imagePolicy = useTerminalImagePolicy();
 	const {
 		hoveredLink,
 		onHover: onLinkHover,
@@ -312,6 +316,33 @@ export function TerminalPane({
 						});
 					}
 				},
+				// An agent hyperlinks an attachment it wrote to disk — Claude Code's
+				// "[Image #22]" carries file:///…/image-cache/<session>/22.png. Images
+				// follow the Image links policy; anything else follows File links.
+				onFileUrlClick: (event, path) => {
+					const isImage = getImageMimeType(path) !== null;
+					const policy = isImage ? imagePolicy : filePolicy;
+					const action = policy.getAction(event);
+					if (action === null) {
+						showHint(event.clientX, event.clientY);
+						return;
+					}
+					event.preventDefault();
+					if (action === "external") {
+						if (isImage) {
+							electronTrpcClient.external.openPath
+								.mutate(path)
+								.catch((error) => {
+									console.error("[v2 Terminal] Failed to open image:", error);
+									toast.error("Failed to open the image");
+								});
+						} else {
+							openInExternalEditor(path);
+						}
+					} else {
+						onOpenFile(path, action === "newTab");
+					}
+				},
 				onLinkHover,
 				onLinkLeave,
 			},
@@ -330,6 +361,7 @@ export function TerminalPane({
 		showHint,
 		filePolicy,
 		urlPolicy,
+		imagePolicy,
 	]);
 
 	useTerminalInterruptClear({
@@ -478,7 +510,12 @@ export function TerminalPane({
 				)}
 			/>
 			<LinkHoverHint
-				hoverLabel={resolveHoverLabel(hoveredLink, filePolicy, urlPolicy)}
+				hoverLabel={resolveHoverLabel(
+					hoveredLink,
+					filePolicy,
+					urlPolicy,
+					imagePolicy,
+				)}
 				hoverPosition={hoveredLink}
 				clickHint={hint}
 			/>
@@ -494,6 +531,7 @@ function resolveHoverLabel(
 	hovered: HoveredLink | null,
 	filePolicy: ReturnType<typeof useTerminalFilePolicy>,
 	urlPolicy: ReturnType<typeof useTerminalUrlPolicy>,
+	imagePolicy: ReturnType<typeof useTerminalImagePolicy>,
 ): string | null {
 	if (!hovered) return null;
 	const event = {
@@ -504,6 +542,10 @@ function resolveHoverLabel(
 	if (hovered.info.kind === "url") {
 		const action = urlPolicy.getAction(event);
 		return action ? actionLabel(action, "url") : null;
+	}
+	if (hovered.info.kind === "image") {
+		const action = imagePolicy.getAction(event);
+		return action ? actionLabel(action, "image") : null;
 	}
 	if (hovered.info.isDirectory) {
 		return folderIntentLabel(folderIntentFor(event));
