@@ -45,6 +45,7 @@ export const SETTING_ITEM_ID = {
 
 	LINKS_FILE: "links-file",
 	LINKS_URL: "links-url",
+	LINKS_IMAGE: "links-image",
 	LINKS_SIDEBAR_FILE: "links-sidebar-file",
 	LINKS_PORT: "links-port",
 
@@ -162,6 +163,7 @@ export const SETTING_ITEM_VARIANT: Record<SettingItemId, SettingVariant> = {
 
 	[SETTING_ITEM_ID.LINKS_FILE]: "v2",
 	[SETTING_ITEM_ID.LINKS_URL]: "v2",
+	[SETTING_ITEM_ID.LINKS_IMAGE]: "v2",
 	[SETTING_ITEM_ID.LINKS_SIDEBAR_FILE]: "v2",
 	[SETTING_ITEM_ID.LINKS_PORT]: "v2",
 
@@ -840,6 +842,25 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
 			"chat",
 			"markdown",
 			"behavior",
+		],
+	},
+	{
+		id: SETTING_ITEM_ID.LINKS_IMAGE,
+		section: "links",
+		title: "Image links",
+		description:
+			"How images pasted into a terminal open when their placeholder is clicked",
+		keywords: [
+			"links",
+			"image",
+			"images",
+			"paste",
+			"pasted",
+			"screenshot",
+			"preview",
+			"click",
+			"cmd",
+			"shift",
 		],
 	},
 	{

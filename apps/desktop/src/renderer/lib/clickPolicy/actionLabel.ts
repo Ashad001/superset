@@ -17,7 +17,17 @@ const URL_LABELS: Record<LinkAction, string> = {
 	system: "Open in default browser",
 };
 
+// A pasted image has no editor worth opening it in, so "external" means the OS
+// handler (Preview) rather than the configured code editor.
+const IMAGE_LABELS: Record<LinkAction, string> = {
+	pane: "Open in tab",
+	newTab: "Open in new tab",
+	external: "Open in default app",
+	system: "Open in default app",
+};
+
 export function actionLabel(action: LinkAction, surface: Surface): string {
+	if (surface === "image") return IMAGE_LABELS[action];
 	return surface === "file" ? FILE_LABELS[action] : URL_LABELS[action];
 }
 
@@ -43,7 +53,15 @@ const SHORT_URL_LABELS: Record<LinkAction, string> = {
 	system: "default browser",
 };
 
+const SHORT_IMAGE_LABELS: Record<LinkAction, string> = {
+	pane: "open",
+	newTab: "new tab",
+	external: "default app",
+	system: "default app",
+};
+
 export function shortActionLabel(action: LinkAction, surface: Surface): string {
+	if (surface === "image") return SHORT_IMAGE_LABELS[action];
 	return surface === "file"
 		? SHORT_FILE_LABELS[action]
 		: SHORT_URL_LABELS[action];

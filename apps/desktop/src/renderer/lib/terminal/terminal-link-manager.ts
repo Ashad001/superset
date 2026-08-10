@@ -11,6 +11,7 @@ import type { ILinkHandler, Terminal as XTerm } from "@xterm/xterm";
 import { UrlLinkProvider } from "../../screens/main/components/WorkspaceView/ContentView/TabsContent/Terminal/link-providers";
 import type { DetectedLink } from "./links";
 import {
+	fileUriToPath,
 	LinkDetectorAdapter,
 	LocalLinkDetector,
 	type StatCallback,
@@ -20,7 +21,8 @@ import {
 
 export type LinkHoverInfo =
 	| { kind: "file"; isDirectory: boolean }
-	| { kind: "url" };
+	| { kind: "url" }
+	| { kind: "image" };
 
 /**
  * Link handler callbacks for the v2 terminal.
@@ -30,6 +32,13 @@ export interface TerminalLinkHandlers {
 	onFileLinkClick?: (event: MouseEvent, link: DetectedLink) => void;
 	/** Called when a URL link is activated. */
 	onUrlClick?: (event: MouseEvent, url: string) => void;
+	/**
+	 * Called when a `file://` hyperlink is activated — the form agents use to
+	 * link an attachment they wrote to disk (Claude Code's `[Image #N]`). Kept
+	 * separate from onUrlClick so it goes through the file/image click policy
+	 * rather than the browser one.
+	 */
+	onFileUrlClick?: (event: MouseEvent, path: string) => void;
 	/** Called when the mouse enters a detected link (file path or URL). */
 	onLinkHover?: (event: MouseEvent, info: LinkHoverInfo) => void;
 	/** Called when the mouse leaves a previously hovered link. */
@@ -149,13 +158,28 @@ export class TerminalLinkManager {
 			// xterm always registers its own OSC 8 hyperlink provider first. Without
 			// this, OSC 8 links use xterm's default confirm() + window.open() path,
 			// which is blocked in Electron and also bypasses our link preferences.
+			// file:// is allowed through (agents hyperlink attachments that way);
+			// every other non-http scheme stays blocked, and activation is routed
+			// by scheme so a file link never reaches the browser handler.
+			const onFileUrlClick = handlers.onFileUrlClick;
 			this._oscLinkHandler = {
-				allowNonHttpProtocols: false,
+				allowNonHttpProtocols: true,
 				activate: (event, uri) => {
-					onUrlClick(event, uri);
+					const filePath = fileUriToPath(uri);
+					if (filePath) {
+						onFileUrlClick?.(event, filePath);
+						return;
+					}
+					if (/^https?:\/\//i.test(uri)) onUrlClick(event, uri);
 				},
 				hover: onLinkHover
-					? (event) => onLinkHover(event, { kind: "url" })
+					? (event, uri) =>
+							onLinkHover(
+								event,
+								fileUriToPath(uri)
+									? { kind: "file", isDirectory: false }
+									: { kind: "url" },
+							)
 					: undefined,
 				leave: onLinkLeave ? () => onLinkLeave() : undefined,
 			};

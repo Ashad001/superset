@@ -35,12 +35,14 @@ export function LinksSettings({ visibleItems }: LinksSettingsProps) {
 		preferences,
 		setFileLinks,
 		setUrlLinks,
+		setImageLinks,
 		setSidebarFileLinks,
 		setPortOpenAction,
 	} = useV2UserPreferences();
 
 	const showFile = isItemVisible(SETTING_ITEM_ID.LINKS_FILE, visibleItems);
 	const showUrl = isItemVisible(SETTING_ITEM_ID.LINKS_URL, visibleItems);
+	const showImage = isItemVisible(SETTING_ITEM_ID.LINKS_IMAGE, visibleItems);
 	const showSidebar = isItemVisible(
 		SETTING_ITEM_ID.LINKS_SIDEBAR_FILE,
 		visibleItems,
@@ -61,6 +63,14 @@ export function LinksSettings({ visibleItems }: LinksSettingsProps) {
 			toast.success("Changes saved");
 		},
 		[setUrlLinks],
+	);
+
+	const handleImageChange = useCallback(
+		(next: LinkTierMap) => {
+			setImageLinks(next);
+			toast.success("Changes saved");
+		},
+		[setImageLinks],
 	);
 
 	const handleSidebarChange = useCallback(
@@ -147,6 +157,17 @@ export function LinksSettings({ visibleItems }: LinksSettingsProps) {
 						onChange={handleFileChange}
 						idPrefix="links-file"
 						surface="file"
+					/>
+				)}
+
+				{showImage && (
+					<LinkTierMapper
+						title="Image links"
+						description="Applies to the [Image #N] placeholder an agent prints for an image pasted into a terminal."
+						value={preferences.imageLinks}
+						onChange={handleImageChange}
+						idPrefix="links-image"
+						surface="image"
 					/>
 				)}
 

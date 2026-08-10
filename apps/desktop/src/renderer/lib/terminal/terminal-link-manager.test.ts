@@ -45,7 +45,9 @@ describe("TerminalLinkManager", () => {
 
 		const linkHandler = terminal.options.linkHandler;
 		expect(linkHandler).toBeTruthy();
-		expect(linkHandler?.allowNonHttpProtocols).toBe(false);
+		// file:// is permitted so agent attachment links activate; activation is
+		// routed by scheme below.
+		expect(linkHandler?.allowNonHttpProtocols).toBe(true);
 
 		const event = {} as MouseEvent;
 		linkHandler?.activate(event, "https://example.com", {
@@ -64,6 +66,60 @@ describe("TerminalLinkManager", () => {
 		expect(onUrlClick).toHaveBeenCalledWith(event, "https://example.com");
 		expect(onLinkHover).toHaveBeenCalledWith(event, { kind: "url" });
 		expect(onLinkLeave).toHaveBeenCalled();
+	});
+
+	it("routes an OSC 8 file:// hyperlink to the file handler, not the browser", () => {
+		const { terminal } = createMockTerminal();
+		const manager = new TerminalLinkManager(terminal);
+		const onUrlClick = mock();
+		const onFileUrlClick = mock();
+		const onLinkHover = mock();
+
+		manager.setHandlers({
+			stat: async () => null,
+			onUrlClick,
+			onFileUrlClick,
+			onLinkHover,
+		});
+
+		const linkHandler = terminal.options.linkHandler;
+		const event = {} as MouseEvent;
+		const range = { start: { x: 1, y: 1 }, end: { x: 20, y: 1 } };
+		const uri = "file:///Users/me/.claude/image-cache/abc/22.png";
+
+		linkHandler?.activate(event, uri, range);
+		linkHandler?.hover?.(event, uri, range);
+
+		expect(onFileUrlClick).toHaveBeenCalledWith(
+			event,
+			"/Users/me/.claude/image-cache/abc/22.png",
+		);
+		expect(onUrlClick).not.toHaveBeenCalled();
+		expect(onLinkHover).toHaveBeenCalledWith(event, {
+			kind: "file",
+			isDirectory: false,
+		});
+	});
+
+	it("ignores an OSC 8 hyperlink with an unsupported scheme", () => {
+		const { terminal } = createMockTerminal();
+		const manager = new TerminalLinkManager(terminal);
+		const onUrlClick = mock();
+		const onFileUrlClick = mock();
+
+		manager.setHandlers({
+			stat: async () => null,
+			onUrlClick,
+			onFileUrlClick,
+		});
+
+		terminal.options.linkHandler?.activate({} as MouseEvent, "vbscript:evil", {
+			start: { x: 1, y: 1 },
+			end: { x: 20, y: 1 },
+		});
+
+		expect(onUrlClick).not.toHaveBeenCalled();
+		expect(onFileUrlClick).not.toHaveBeenCalled();
 	});
 
 	it("clears only the OSC link handler it installed", () => {
