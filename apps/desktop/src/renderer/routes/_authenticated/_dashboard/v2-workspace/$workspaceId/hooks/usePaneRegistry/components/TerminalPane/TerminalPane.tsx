@@ -1,4 +1,5 @@
 import type { RendererContext } from "@superset/panes";
+import { toast } from "@superset/ui/sonner";
 import { cn } from "@superset/ui/utils";
 import { workspaceTrpc } from "@superset/workspace-client";
 import "@xterm/xterm/css/xterm.css";
@@ -17,8 +18,10 @@ import {
 	folderIntentLabel,
 	LinkHoverHint,
 	useTerminalFilePolicy,
+	useTerminalImagePolicy,
 	useTerminalUrlPolicy,
 } from "renderer/lib/clickPolicy";
+import { getStagedImage } from "renderer/lib/terminal/pasted-image-store";
 import {
 	type ConnectionState,
 	terminalRuntimeRegistry,
@@ -63,6 +66,7 @@ export function TerminalPane({
 }: TerminalPaneProps) {
 	const filePolicy = useTerminalFilePolicy();
 	const urlPolicy = useTerminalUrlPolicy();
+	const imagePolicy = useTerminalImagePolicy();
 	const {
 		hoveredLink,
 		onHover: onLinkHover,
@@ -336,6 +340,31 @@ export function TerminalPane({
 						});
 					}
 				},
+				onImageLinkClick: (event, ordinal) => {
+					const action = imagePolicy.getAction(event);
+					if (action === null) {
+						showHint(event.clientX, event.clientY);
+						return;
+					}
+					const path = getStagedImage(terminalId, ordinal);
+					if (!path) {
+						// The agent showed an image this pane never saw pasted — a
+						// drag-drop, or output replayed from a resumed session.
+						toast("No preview available for this image");
+						return;
+					}
+					event.preventDefault();
+					if (action === "external") {
+						electronTrpcClient.external.openPath
+							.mutate({ path })
+							.catch((error) => {
+								console.error("[v2 Terminal] Failed to open image:", error);
+								toast.error("Failed to open the image");
+							});
+					} else {
+						onOpenFile(path, action === "newTab");
+					}
+				},
 				onLinkHover,
 				onLinkLeave,
 			},
@@ -354,6 +383,7 @@ export function TerminalPane({
 		showHint,
 		filePolicy,
 		urlPolicy,
+		imagePolicy,
 	]);
 
 	useTerminalInterruptClear({
@@ -502,7 +532,12 @@ export function TerminalPane({
 				)}
 			/>
 			<LinkHoverHint
-				hoverLabel={resolveHoverLabel(hoveredLink, filePolicy, urlPolicy)}
+				hoverLabel={resolveHoverLabel(
+					hoveredLink,
+					filePolicy,
+					urlPolicy,
+					imagePolicy,
+				)}
 				hoverPosition={hoveredLink}
 				clickHint={hint}
 			/>
@@ -518,6 +553,7 @@ function resolveHoverLabel(
 	hovered: HoveredLink | null,
 	filePolicy: ReturnType<typeof useTerminalFilePolicy>,
 	urlPolicy: ReturnType<typeof useTerminalUrlPolicy>,
+	imagePolicy: ReturnType<typeof useTerminalImagePolicy>,
 ): string | null {
 	if (!hovered) return null;
 	const event = {
@@ -528,6 +564,10 @@ function resolveHoverLabel(
 	if (hovered.info.kind === "url") {
 		const action = urlPolicy.getAction(event);
 		return action ? actionLabel(action, "url") : null;
+	}
+	if (hovered.info.kind === "image") {
+		const action = imagePolicy.getAction(event);
+		return action ? actionLabel(action, "image") : null;
 	}
 	if (hovered.info.isDirectory) {
 		return folderIntentLabel(folderIntentFor(event));

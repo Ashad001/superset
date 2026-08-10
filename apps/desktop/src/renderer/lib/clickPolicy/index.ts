@@ -25,6 +25,7 @@ export { useInlineFilePolicy } from "./policies/useInlineFilePolicy";
 export { useInlineUrlPolicy } from "./policies/useInlineUrlPolicy";
 export { useSidebarFilePolicy } from "./policies/useSidebarFilePolicy";
 export { useTerminalFilePolicy } from "./policies/useTerminalFilePolicy";
+export { useTerminalImagePolicy } from "./policies/useTerminalImagePolicy";
 export { useTerminalUrlPolicy } from "./policies/useTerminalUrlPolicy";
 export { tierFor } from "./tiers";
 export type {

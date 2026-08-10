@@ -22,10 +22,10 @@ export type TierMode = "4-tier" | "2-tier";
 
 /**
  * Surface determines which action labels are surfaced in tooltips and
- * settings (e.g. "external" reads "Open in editor" for files but
- * "Open in browser" for URLs).
+ * settings (e.g. "external" reads "Open in editor" for files, "Open in
+ * browser" for URLs, and "Open in default app" for images).
  */
-export type Surface = "file" | "url";
+export type Surface = "file" | "url" | "image";
 
 export interface ResolvedClick {
 	tier: LinkTier;

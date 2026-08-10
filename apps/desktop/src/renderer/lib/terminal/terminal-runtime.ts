@@ -17,6 +17,7 @@ import {
 	runWhenParserIdle,
 	wrapWrite,
 } from "./parser-idle-gate";
+import { clearStagedImages, stagePastedImages } from "./pasted-image-store";
 import { loadAddons } from "./terminal-addons";
 import {
 	removeTerminalStatePersistedAt,
@@ -315,6 +316,11 @@ export function createRuntime(
 	const disposeImagePasteFallback = installImagePasteFallback(
 		terminal,
 		wrapper,
+		(files) => {
+			// The agent got the bytes via ^V; keep a copy so the "[Image #N]" it
+			// prints back has something to open.
+			void stagePastedImages(terminalId, files);
+		},
 	);
 
 	return {
@@ -465,5 +471,8 @@ export function disposeRuntime(
 	runtime.terminal.dispose();
 	if (persistedState === "clear") {
 		clearPersistedRuntimeState(runtime.terminalId);
+		// Only drop the staged images when the buffer goes too — a preserved
+		// buffer still shows the placeholders that point at them.
+		clearStagedImages(runtime.terminalId);
 	}
 }

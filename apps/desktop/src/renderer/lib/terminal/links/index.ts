@@ -4,6 +4,11 @@ export {
 	getXtermLineContent,
 } from "./buffer-helpers";
 
+export {
+	countPlaceholdersBefore,
+	ImagePlaceholderDetector,
+} from "./image-placeholder-detector";
+
 export { LinkDetectorAdapter } from "./link-detector-adapter";
 
 export {

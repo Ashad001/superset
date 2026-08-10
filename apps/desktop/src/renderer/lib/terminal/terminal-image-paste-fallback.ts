@@ -27,22 +27,35 @@ export function isNonTextPaste(event: ClipboardEvent): boolean {
 	return (data.files?.length ?? 0) > 0;
 }
 
+/**
+ * Called with the pasted files after `^V` has been forwarded. The agent still
+ * reads the clipboard itself — this is only so the app can offer a preview of
+ * what was attached, which the CLI's own `[Image #N]` placeholder can't.
+ */
+export type ImagePasteListener = (files: File[]) => void;
+
 export function handleImagePasteFallback(
 	event: ClipboardEvent,
 	terminal: XTerm,
+	onPaste?: ImagePasteListener,
 ): void {
 	if (!isNonTextPaste(event)) return;
+	// Snapshot before preventDefault/forwarding: clipboardData is only valid
+	// during dispatch, so a listener reading it later would find it empty.
+	const files = Array.from(event.clipboardData?.files ?? []);
 	event.preventDefault();
 	event.stopImmediatePropagation();
 	terminal.input("\x16", true);
+	if (files.length > 0) onPaste?.(files);
 }
 
 export function installImagePasteFallback(
 	terminal: XTerm,
 	wrapper: HTMLElement,
+	onPaste?: ImagePasteListener,
 ): () => void {
 	const handler = (event: ClipboardEvent) => {
-		handleImagePasteFallback(event, terminal);
+		handleImagePasteFallback(event, terminal, onPaste);
 	};
 
 	wrapper.addEventListener("paste", handler, { capture: true });

@@ -75,6 +75,16 @@ export function resolveDefaultEditor(projectId?: string): ExternalApp | null {
 	return row?.defaultEditor ?? null;
 }
 
+/** First free path in `dir` for `filename`, suffixing " (1)", " (2)", … */
+function uniqueFilePath(dir: string, filename: string): string {
+	const { name, ext } = nodePath.parse(filename);
+	let target = nodePath.join(dir, filename);
+	for (let i = 1; fs.existsSync(target); i++) {
+		target = nodePath.join(dir, `${name} (${i})${ext}`);
+	}
+	return target;
+}
+
 async function openPathInApp(
 	filePath: string,
 	app: ExternalApp,
@@ -147,6 +157,31 @@ export const createExternalRouter = () => {
 			}),
 
 		/**
+		 * Park clipboard bytes in a temp file so they can be previewed. Used for
+		 * images pasted into a terminal: the paste itself is forwarded to the
+		 * agent CLI as ^V and never touches disk, leaving nothing to open.
+		 */
+		writeTempFile: publicProcedure
+			.input(
+				z.object({
+					filename: z.string().min(1),
+					// ~10MB of bytes → ~14M base64 chars, matching saveToDownloads.
+					dataBase64: z.string().max(20_000_000),
+				}),
+			)
+			.mutation(async ({ input }) => {
+				const dir = nodePath.join(app.getPath("temp"), "superset-pasted");
+				await fs.promises.mkdir(dir, { recursive: true });
+				const safeName = nodePath.basename(input.filename) || "pasted";
+				const target = uniqueFilePath(dir, safeName);
+				await fs.promises.writeFile(
+					target,
+					Buffer.from(input.dataBase64, "base64"),
+				);
+				return { path: target };
+			}),
+
+		/**
 		 * Hand a path to the OS default handler — Preview for an image, Acrobat
 		 * for a PDF. Distinct from openInApp/openFileInEditor, which target a
 		 * specific editor and only reach the OS as a no-editor-configured
@@ -183,12 +218,7 @@ export const createExternalRouter = () => {
 			)
 			.mutation(async ({ input }) => {
 				const safeName = nodePath.basename(input.filename) || "download";
-				const downloadsDir = app.getPath("downloads");
-				const { name, ext } = nodePath.parse(safeName);
-				let target = nodePath.join(downloadsDir, safeName);
-				for (let i = 1; fs.existsSync(target); i++) {
-					target = nodePath.join(downloadsDir, `${name} (${i})${ext}`);
-				}
+				const target = uniqueFilePath(app.getPath("downloads"), safeName);
 				await fs.promises.writeFile(
 					target,
 					Buffer.from(input.dataBase64, "base64"),

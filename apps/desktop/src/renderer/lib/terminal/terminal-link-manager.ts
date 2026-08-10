@@ -11,6 +11,7 @@ import type { ILinkHandler, Terminal as XTerm } from "@xterm/xterm";
 import { UrlLinkProvider } from "../../screens/main/components/WorkspaceView/ContentView/TabsContent/Terminal/link-providers";
 import type { DetectedLink } from "./links";
 import {
+	ImagePlaceholderDetector,
 	LinkDetectorAdapter,
 	LocalLinkDetector,
 	type StatCallback,
@@ -20,7 +21,8 @@ import {
 
 export type LinkHoverInfo =
 	| { kind: "file"; isDirectory: boolean }
-	| { kind: "url" };
+	| { kind: "url" }
+	| { kind: "image" };
 
 /**
  * Link handler callbacks for the v2 terminal.
@@ -30,6 +32,12 @@ export interface TerminalLinkHandlers {
 	onFileLinkClick?: (event: MouseEvent, link: DetectedLink) => void;
 	/** Called when a URL link is activated. */
 	onUrlClick?: (event: MouseEvent, url: string) => void;
+	/**
+	 * Called when an agent's `[Image #N]` placeholder is activated. `ordinal` is
+	 * the placeholder's position in this terminal's output (0-based), which
+	 * indexes the images staged on paste — not the number the CLI printed.
+	 */
+	onImageLinkClick?: (event: MouseEvent, ordinal: number) => void;
 	/** Called when the mouse enters a detected link (file path or URL). */
 	onLinkHover?: (event: MouseEvent, info: LinkHoverInfo) => void;
 	/** Called when the mouse leaves a previously hovered link. */
@@ -162,7 +170,26 @@ export class TerminalLinkManager {
 			this._terminal.options.linkHandler = this._oscLinkHandler;
 		}
 
-		// 3. SUPERSET ADDITION: Word link detector (lowest priority).
+		// 3. Image placeholder provider. Registered above the word detector so a
+		// bare "[Image #3]" can't be mistaken for a filename.
+		if (handlers.onImageLinkClick) {
+			const onImageClick = handlers.onImageLinkClick;
+			const imageProvider = new ImagePlaceholderDetector(
+				this._terminal,
+				(event, ordinal) => {
+					onImageClick(event, ordinal);
+				},
+				onLinkHover
+					? (event) => onLinkHover(event, { kind: "image" })
+					: undefined,
+				onLinkLeave,
+			);
+			this._disposables.push(
+				this._terminal.registerLinkProvider(imageProvider),
+			);
+		}
+
+		// 4. SUPERSET ADDITION: Word link detector (lowest priority).
 		// Adapted from VSCode's TerminalWordLinkDetector. VSCode opens a
 		// workspace search on click; ours opens the file directly if it
 		// exists (validated via stat). Catches bare filenames like

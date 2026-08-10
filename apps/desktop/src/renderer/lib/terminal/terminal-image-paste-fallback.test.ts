@@ -116,6 +116,39 @@ describe("handleImagePasteFallback", () => {
 		expect(flags.immediateStopped).toBe(true);
 	});
 
+	it("hands the pasted files to the listener after forwarding ^V", () => {
+		const file = new File([new Uint8Array([1, 2, 3])], "shot.png", {
+			type: "image/png",
+		});
+		const { event } = clipboardEvent({
+			types: ["Files"],
+			getData: () => "",
+			files: { 0: file, length: 1 } as unknown as { length: number },
+		});
+		const { terminal, input } = makeFakeTerminal();
+		const seen: File[][] = [];
+
+		handleImagePasteFallback(event, terminal, (files) => seen.push(files));
+
+		// The agent still reads the clipboard itself — the listener is additive,
+		// so ^V must have gone out regardless.
+		expect(input).toHaveBeenCalledWith("\x16", true);
+		expect(seen).toEqual([[file]]);
+	});
+
+	it("does not notify the listener for a text paste", () => {
+		const { event } = clipboardEvent({
+			types: ["text/plain"],
+			getData: (t) => (t === "text/plain" ? "hello" : ""),
+		});
+		const { terminal } = makeFakeTerminal();
+		const seen: File[][] = [];
+
+		handleImagePasteFallback(event, terminal, (files) => seen.push(files));
+
+		expect(seen).toEqual([]);
+	});
+
 	it("does not call terminal.input for text paste — xterm's built-in handles it", () => {
 		const { event, flags } = clipboardEvent({
 			types: ["text/plain"],
