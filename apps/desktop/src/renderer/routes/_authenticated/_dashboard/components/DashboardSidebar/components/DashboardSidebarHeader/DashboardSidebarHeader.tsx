@@ -28,6 +28,7 @@ import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useFolderFirstImport } from "renderer/routes/_authenticated/_dashboard/components/AddRepositoryModals/hooks/useFolderFirstImport";
 import { NavigationControls } from "renderer/routes/_authenticated/_dashboard/components/NavigationControls";
 import { SidebarToggle } from "renderer/routes/_authenticated/_dashboard/components/SidebarToggle";
+import { ResourceConsumption } from "renderer/routes/_authenticated/_dashboard/components/TopBar/components/ResourceConsumption";
 import { useFailedAutomations } from "renderer/routes/_authenticated/_dashboard/hooks/useFailedAutomations";
 import {
 	pullRequestsSearchFromFilters,
@@ -396,6 +397,9 @@ export function DashboardSidebarHeader({
 				<ZoomStable enabled={isMac} className="flex items-center gap-1.5">
 					<SidebarToggle />
 					<NavigationControls />
+					{/* Fork: the top bar hides this cluster while the sidebar is open,
+					    so the resource badge lives here too. */}
+					<ResourceConsumption surface="v2" />
 				</ZoomStable>
 				<div className="drag h-full min-w-0 flex-1" />
 			</div>

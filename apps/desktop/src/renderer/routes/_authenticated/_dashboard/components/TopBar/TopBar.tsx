@@ -67,7 +67,9 @@ export function TopBar() {
 					<ZoomStable enabled={isMac} className="flex items-center gap-1.5">
 						<SidebarToggle />
 						<NavigationControls />
-						{!isV2CloudEnabled && <ResourceConsumption surface="v1" />}
+						{/* Fork: #6037 moved this into the command palette; keep the badge
+						    in the bar on v2 too. */}
+						<ResourceConsumption surface={isV2CloudEnabled ? "v2" : "v1"} />
 					</ZoomStable>
 				)}
 			</div>
