@@ -8,6 +8,7 @@ import {
 	SelectValue,
 } from "@superset/ui/select";
 import { Switch } from "@superset/ui/switch";
+import { useV2UserPreferences } from "renderer/hooks/useV2UserPreferences";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { HighlightText } from "renderer/routes/_authenticated/settings/components/HighlightText";
 import { useSettingsSearchQuery } from "renderer/stores/settings-state";
@@ -83,6 +84,8 @@ export function BehaviorSettings({ visibleItems }: BehaviorSettingsProps) {
 			utils.settings.getFileOpenMode.invalidate();
 		},
 	});
+
+	const { preferences, setShowClaudeUsage } = useV2UserPreferences();
 
 	const { data: resourceMonitorEnabled, isLoading: isResourceMonitorLoading } =
 		electronTrpc.settings.getShowResourceMonitor.useQuery();
@@ -210,6 +213,22 @@ export function BehaviorSettings({ visibleItems }: BehaviorSettingsProps) {
 						/>
 					</div>
 				)}
+
+				<div className="flex items-center justify-between">
+					<div className="space-y-0.5">
+						<Label htmlFor="claude-usage" className="text-sm font-medium">
+							<HighlightText text="Claude usage" query={searchQuery} />
+						</Label>
+						<p className="text-xs text-muted-foreground">
+							Show Claude token usage and rate-limit window in the top bar
+						</p>
+					</div>
+					<Switch
+						id="claude-usage"
+						checked={preferences.showClaudeUsage}
+						onCheckedChange={setShowClaudeUsage}
+					/>
+				</div>
 
 				{showOpenLinksInApp && (
 					<div className="flex items-center justify-between">

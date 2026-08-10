@@ -19,6 +19,7 @@ export interface V2UserPreferencesApi {
 	setImageLinks: (next: LinkTierMap) => void;
 	setSidebarFileLinks: (next: LinkTierMap) => void;
 	setPortOpenAction: (next: LinkAction) => void;
+	setShowClaudeUsage: (next: boolean) => void;
 	setRightSidebarOpen: (next: boolean | ((prev: boolean) => boolean)) => void;
 	setRightSidebarTab: (next: RightSidebarTab) => void;
 	setRightSidebarWidth: (next: number) => void;
@@ -100,6 +101,25 @@ export function useV2UserPreferences(): V2UserPreferencesApi {
 			});
 		},
 		[collections],
+	);
+
+	const setShowClaudeUsage = useCallback(
+		(next: boolean) => {
+			const existing = collections.v2UserPreferences.get(
+				V2_USER_PREFERENCES_ID,
+			);
+			if (!existing) {
+				collections.v2UserPreferences.insert({
+					...DEFAULT_V2_USER_PREFERENCES,
+					showClaudeUsage: next,
+				});
+				return;
+			}
+			collections.v2UserPreferences.update(V2_USER_PREFERENCES_ID, (draft) => {
+				draft.showClaudeUsage = next;
+			});
+		},
+		[collections.v2UserPreferences],
 	);
 
 	const setRightSidebarOpen = useCallback(
@@ -247,6 +267,7 @@ export function useV2UserPreferences(): V2UserPreferencesApi {
 		setImageLinks,
 		setSidebarFileLinks,
 		setPortOpenAction,
+		setShowClaudeUsage,
 		setRightSidebarOpen,
 		setRightSidebarTab,
 		setRightSidebarWidth,

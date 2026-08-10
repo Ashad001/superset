@@ -8,6 +8,7 @@ import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useWorkspaceSidebarStore } from "renderer/stores/workspace-sidebar-state";
 import { NavigationControls } from "../NavigationControls";
 import { SidebarToggle } from "../SidebarToggle";
+import { ClaudeUsage } from "./components/ClaudeUsage";
 import { OpenInMenuButton } from "./components/OpenInMenuButton";
 import { OrganizationDropdown } from "./components/OrganizationDropdown";
 import { ResourceConsumption } from "./components/ResourceConsumption";
@@ -70,6 +71,7 @@ export function TopBar() {
 						{/* Fork: #6037 moved this into the command palette; keep the badge
 						    in the bar on v2 too. */}
 						<ResourceConsumption surface={isV2CloudEnabled ? "v2" : "v1"} />
+						<ClaudeUsage />
 					</ZoomStable>
 				)}
 			</div>
