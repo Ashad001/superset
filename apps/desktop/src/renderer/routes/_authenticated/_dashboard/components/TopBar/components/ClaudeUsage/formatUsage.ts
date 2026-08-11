@@ -28,11 +28,25 @@ export function windowFillRatio(tokens: number, peakTokens: number): number {
 	return Math.min(1, tokens / peakTokens);
 }
 
-/** Drop the vendor prefix: claude-opus-5 → Opus 5. */
+/**
+ * Drop the vendor prefix and rejoin the version: claude-opus-4-8 → Opus 4.8.
+ * Model ids spell the version with dashes, so a naive split reads "Opus 4 8".
+ */
 export function formatModel(model: string): string {
 	const name = model.replace(/^claude-/, "").replace(/-\d{8}$/, "");
-	return name
-		.split("-")
+	const parts = name.split("-");
+	const family = parts
+		.filter((part) => !/^\d+$/.test(part))
 		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
 		.join(" ");
+	const version = parts.filter((part) => /^\d+$/.test(part)).join(".");
+	return version ? `${family} ${version}` : family;
+}
+
+/** "Jul 22" for the day labels. */
+export function formatDay(at: number): string {
+	return new Date(at).toLocaleDateString(undefined, {
+		month: "short",
+		day: "numeric",
+	});
 }

@@ -58,7 +58,11 @@ describe("formatModel", () => {
 		expect(formatModel("claude-opus-5")).toBe("Opus 5");
 	});
 
+	it("rejoins a dashed version number", () => {
+		expect(formatModel("claude-opus-4-8")).toBe("Opus 4.8");
+	});
+
 	it("strips a dated suffix", () => {
-		expect(formatModel("claude-haiku-4-5-20251001")).toBe("Haiku 4 5");
+		expect(formatModel("claude-haiku-4-5-20251001")).toBe("Haiku 4.5");
 	});
 });

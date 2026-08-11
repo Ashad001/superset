@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
 	aggregate,
+	computeStreaks,
 	dedupe,
 	splitIntoBlocks,
 	type UsageEntry,
@@ -16,6 +17,7 @@ function entry(overrides: Partial<UsageEntry> = {}): UsageEntry {
 		timestamp: NOON,
 		model: "claude-opus-5",
 		project: "superset",
+		sessionId: null,
 		requestId: null,
 		inputTokens: 100,
 		outputTokens: 200,
@@ -37,6 +39,40 @@ describe("dedupe", () => {
 
 	it("keeps entries with no request id", () => {
 		expect(dedupe([entry(), entry()])).toHaveLength(2);
+	});
+});
+
+describe("dedupe (synthetic)", () => {
+	it("drops Claude's synthetic tool-plumbing turns", () => {
+		expect(dedupe([entry({ model: "<synthetic>" }), entry()])).toHaveLength(1);
+	});
+});
+
+describe("computeStreaks", () => {
+	const day = (offset: number) =>
+		new Date(NOON).setHours(0, 0, 0, 0) + offset * 24 * 60 * 60 * 1000;
+
+	it("counts consecutive days ending today", () => {
+		expect(computeStreaks([day(-2), day(-1), day(0)], NOON).current).toBe(3);
+	});
+
+	it("keeps a streak alive on the day after the last one", () => {
+		// Nothing logged yet today — the streak shouldn't die until a day is missed.
+		expect(computeStreaks([day(-2), day(-1)], NOON).current).toBe(2);
+	});
+
+	it("breaks a streak once a full day is missed", () => {
+		expect(computeStreaks([day(-5), day(-4)], NOON).current).toBe(0);
+	});
+
+	it("reports the longest run independently of the current one", () => {
+		const streaks = computeStreaks(
+			[day(-9), day(-8), day(-7), day(-6), day(-1), day(0)],
+			NOON,
+		);
+		expect(streaks.longest).toBe(4);
+		expect(streaks.current).toBe(2);
+		expect(streaks.activeDays).toBe(6);
 	});
 });
 
@@ -108,6 +144,37 @@ describe("aggregate", () => {
 		);
 		expect(snapshot.byModel[0]?.model).toBe("claude-opus-5");
 		expect(snapshot.byProject[0]?.project).toBe("superset");
+	});
+
+	it("splits the all-time totals by token kind and counts sessions", () => {
+		const snapshot = aggregate(
+			[
+				entry({ timestamp: NOON, sessionId: "s1" }),
+				entry({ timestamp: NOON + 60_000, sessionId: "s1" }),
+				entry({ timestamp: NOON + 120_000, sessionId: "s2" }),
+			],
+			NOON + HOUR,
+		);
+		expect(snapshot.total.sessions).toBe(2);
+		expect(snapshot.total.inputTokens).toBe(300);
+		expect(snapshot.total.outputTokens).toBe(600);
+		// Cache reads are tracked all-time even though they stay out of `tokens`.
+		expect(snapshot.total.cacheReadTokens).toBe(150_000);
+		expect(snapshot.total.tokens).toBe(3000);
+	});
+
+	it("names the heaviest model and day", () => {
+		const snapshot = aggregate(
+			[
+				entry({ timestamp: NOON - 24 * HOUR, outputTokens: 9_000 }),
+				entry({ timestamp: NOON, model: "claude-sonnet-5" }),
+			],
+			NOON + HOUR,
+		);
+		expect(snapshot.favoriteModel).toBe("claude-opus-5");
+		expect(snapshot.mostActiveDay).toBe(
+			new Date(NOON - 24 * HOUR).setHours(0, 0, 0, 0),
+		);
 	});
 
 	it("returns an empty snapshot when there is no history", () => {

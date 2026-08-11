@@ -6,10 +6,12 @@ import { useState } from "react";
 import { HiOutlineSparkles } from "react-icons/hi2";
 import { useV2UserPreferences } from "renderer/hooks/useV2UserPreferences";
 import { electronTrpc } from "renderer/lib/electron-trpc";
-import { UsageBar } from "./components/UsageBar";
+import { DailyActivity } from "./components/DailyActivity";
+import { CLAUDE_ORANGE, UsageBar } from "./components/UsageBar";
 import { UsageRow } from "./components/UsageRow";
 import {
 	formatCountdown,
+	formatDay,
 	formatModel,
 	formatTokens,
 	windowFillRatio,
@@ -20,21 +22,33 @@ import {
 // just re-serve the same snapshot.
 const REFETCH_INTERVAL_MS = 60_000;
 
+function Stat({ label, value }: { label: string; value: string }) {
+	return (
+		<div className="min-w-0">
+			<div className="truncate text-[11px] text-muted-foreground">{label}</div>
+			<div className="truncate text-xs tabular-nums select-text cursor-text">
+				{value}
+			</div>
+		</div>
+	);
+}
+
 export function ClaudeUsage({ className }: { className?: string }) {
 	const [open, setOpen] = useState(false);
 	const { preferences } = useV2UserPreferences();
 	const enabled = preferences.showClaudeUsage;
 
-	const { data: snapshot } = electronTrpc.claudeUsage.getSnapshot.useQuery(
-		undefined,
-		{
-			enabled: enabled && open,
+	// Runs on mount, not on open: the first scan of a full history takes several
+	// seconds (it yields between files, so nothing blocks), and the badge needs
+	// the figures anyway. Later scans reuse the per-file memo and are instant.
+	const { data: snapshot, isPending } =
+		electronTrpc.claudeUsage.getSnapshot.useQuery(undefined, {
+			enabled,
 			refetchInterval: open ? REFETCH_INTERVAL_MS : false,
 			// Keep the last figures on screen while a refetch runs, so the badge
 			// doesn't blank out every minute.
 			placeholderData: (previous) => previous,
-		},
-	);
+		});
 
 	if (!enabled) return null;
 
@@ -54,7 +68,10 @@ export function ClaudeUsage({ className }: { className?: string }) {
 							size="sm"
 							className={cn("h-7 gap-1.5 px-2 text-xs", className)}
 						>
-							<HiOutlineSparkles className="size-3.5 shrink-0" />
+							<HiOutlineSparkles
+								className="size-3.5 shrink-0"
+								style={{ color: CLAUDE_ORANGE }}
+							/>
 							<span className="tabular-nums">{badgeLabel}</span>
 						</Button>
 					</PopoverTrigger>
@@ -63,7 +80,10 @@ export function ClaudeUsage({ className }: { className?: string }) {
 			</Tooltip>
 
 			<PopoverContent align="start" className="w-80 p-0">
-				<div className="space-y-3 p-3">
+				<div className="max-h-[32rem] space-y-3 overflow-y-auto p-3">
+					{isPending ? (
+						<p className="text-xs text-muted-foreground">Reading usage…</p>
+					) : null}
 					<div>
 						<div className="flex items-baseline justify-between">
 							<span className="text-xs font-medium">Current window</span>
@@ -94,15 +114,85 @@ export function ClaudeUsage({ className }: { className?: string }) {
 						) : null}
 					</div>
 
-					<div className="border-t pt-3">
-						<div className="flex items-baseline justify-between">
-							<span className="text-xs font-medium">Last 7 days</span>
-							<span className="text-xs tabular-nums text-muted-foreground select-text cursor-text">
-								{formatTokens(snapshot?.week.tokens ?? 0)} ·{" "}
-								{snapshot?.week.messages ?? 0} messages
-							</span>
-						</div>
+					<div className="grid grid-cols-2 gap-x-3 gap-y-2 border-t pt-3">
+						<Stat
+							label="Today"
+							value={`${formatTokens(snapshot?.today.tokens ?? 0)} · ${snapshot?.today.messages ?? 0} msgs`}
+						/>
+						<Stat
+							label="Last 7 days"
+							value={`${formatTokens(snapshot?.week.tokens ?? 0)} · ${snapshot?.week.messages ?? 0} msgs`}
+						/>
 					</div>
+
+					{snapshot && snapshot.daily.length > 0 ? (
+						<div className="border-t pt-3">
+							<div className="flex items-baseline justify-between">
+								<span className="text-xs font-medium">Activity</span>
+								<span className="text-[11px] text-muted-foreground">
+									last 30 days
+								</span>
+							</div>
+							<div className="mt-2">
+								<DailyActivity daily={snapshot.daily} />
+							</div>
+						</div>
+					) : null}
+
+					{snapshot && snapshot.total.messages > 0 ? (
+						<div className="grid grid-cols-2 gap-x-3 gap-y-2 border-t pt-3">
+							<Stat
+								label="Current streak"
+								value={`${snapshot.streak.current} days`}
+							/>
+							<Stat
+								label="Longest streak"
+								value={`${snapshot.streak.longest} days`}
+							/>
+							<Stat label="Sessions" value={String(snapshot.total.sessions)} />
+							<Stat
+								label="Active days"
+								value={String(snapshot.streak.activeDays)}
+							/>
+							<Stat
+								label="Favorite model"
+								value={
+									snapshot.favoriteModel
+										? formatModel(snapshot.favoriteModel)
+										: "—"
+								}
+							/>
+							<Stat
+								label="Busiest day"
+								value={
+									snapshot.mostActiveDay
+										? formatDay(snapshot.mostActiveDay)
+										: "—"
+								}
+							/>
+						</div>
+					) : null}
+
+					{snapshot && snapshot.total.messages > 0 ? (
+						<div className="border-t pt-3">
+							<div className="flex items-baseline justify-between">
+								<span className="text-xs font-medium">All time</span>
+								<span className="text-[11px] text-muted-foreground">
+									{snapshot.since ? `since ${formatDay(snapshot.since)}` : null}
+								</span>
+							</div>
+							<div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-muted-foreground select-text cursor-text">
+								<span>Input {formatTokens(snapshot.total.inputTokens)}</span>
+								<span>Output {formatTokens(snapshot.total.outputTokens)}</span>
+								<span>
+									Cache write {formatTokens(snapshot.total.cacheCreationTokens)}
+								</span>
+								<span>
+									Cache read {formatTokens(snapshot.total.cacheReadTokens)}
+								</span>
+							</div>
+						</div>
+					) : null}
 
 					{snapshot && snapshot.byModel.length > 0 ? (
 						<div className="border-t pt-3">
@@ -113,7 +203,7 @@ export function ClaudeUsage({ className }: { className?: string }) {
 										key={row.model}
 										label={formatModel(row.model)}
 										tokens={row.tokens}
-										total={snapshot.week.tokens}
+										total={snapshot.total.tokens}
 									/>
 								))}
 							</div>
@@ -123,13 +213,13 @@ export function ClaudeUsage({ className }: { className?: string }) {
 					{snapshot && snapshot.byProject.length > 0 ? (
 						<div className="border-t pt-3">
 							<span className="text-xs font-medium">By project</span>
-							<div className="mt-1.5 max-h-40 space-y-1 overflow-y-auto">
-								{snapshot.byProject.map((row) => (
+							<div className="mt-1.5 space-y-1">
+								{snapshot.byProject.slice(0, 8).map((row) => (
 									<UsageRow
 										key={row.project}
 										label={row.project}
 										tokens={row.tokens}
-										total={snapshot.week.tokens}
+										total={snapshot.total.tokens}
 									/>
 								))}
 							</div>
