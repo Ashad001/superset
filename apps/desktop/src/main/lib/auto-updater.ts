@@ -347,7 +347,11 @@ export function setupAutoUpdater(): void {
 	autoUpdater.logger = log;
 
 	autoUpdater.autoDownload = true;
-	autoUpdater.autoInstallOnAppQuit = true;
+	// Fork: upstream installs a downloaded update on quit. That swaps the app
+	// out from under a plain ⌘Q with no confirmation, so an update you haven't
+	// looked at lands the next time you open it. Install only when the user
+	// asks — the pill's "Restart to update" action calls quitAndInstall().
+	autoUpdater.autoInstallOnAppQuit = false;
 	autoUpdater.disableDifferentialDownload = true;
 
 	// Allow downgrade for prerelease builds so users can switch back to stable
