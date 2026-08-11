@@ -3,11 +3,11 @@ import { cn } from "@superset/ui/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@superset/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
 import { useState } from "react";
-import { HiOutlineSparkles } from "react-icons/hi2";
 import { useV2UserPreferences } from "renderer/hooks/useV2UserPreferences";
 import { electronTrpc } from "renderer/lib/electron-trpc";
+import { ClaudeIcon } from "./components/ClaudeIcon";
 import { DailyActivity } from "./components/DailyActivity";
-import { CLAUDE_ORANGE, UsageBar } from "./components/UsageBar";
+import { UsageBar } from "./components/UsageBar";
 import { UsageRow } from "./components/UsageRow";
 import {
 	formatCountdown,
@@ -17,10 +17,9 @@ import {
 	windowFillRatio,
 } from "./formatUsage";
 
-// Usage is derived from Claude Code's own transcripts on disk, which only move
-// when a session writes. Polling faster than the main-process scan cache would
-// just re-serve the same snapshot.
-const REFETCH_INTERVAL_MS = 60_000;
+// Reopening the panel inside this window reuses the last snapshot rather than
+// rescanning; usage doesn't move fast enough to notice.
+const STALE_TIME_MS = 60_000;
 
 function Stat({ label, value }: { label: string; value: string }) {
 	return (
@@ -38,25 +37,20 @@ export function ClaudeUsage({ className }: { className?: string }) {
 	const { preferences } = useV2UserPreferences();
 	const enabled = preferences.showClaudeUsage;
 
-	// Runs on mount, not on open: the first scan of a full history takes several
-	// seconds (it yields between files, so nothing blocks), and the badge needs
-	// the figures anyway. Later scans reuse the per-file memo and are instant.
+	// Scanning the transcripts is expensive, so nothing runs until the panel is
+	// opened. The result is memoized per file in the main process, so a second
+	// open is instant; there is no polling and no work while the panel is shut.
 	const { data: snapshot, isPending } =
 		electronTrpc.claudeUsage.getSnapshot.useQuery(undefined, {
-			enabled,
-			refetchInterval: open ? REFETCH_INTERVAL_MS : false,
-			// Keep the last figures on screen while a refetch runs, so the badge
-			// doesn't blank out every minute.
-			placeholderData: (previous) => previous,
+			enabled: enabled && open,
+			refetchOnWindowFocus: false,
+			staleTime: STALE_TIME_MS,
 		});
 
 	if (!enabled) return null;
 
 	const now = Date.now();
 	const current = snapshot?.window ?? null;
-	const badgeLabel = current
-		? `${formatTokens(current.tokens)} · ${formatCountdown(current.resetsAt, now)}`
-		: "Claude";
 
 	return (
 		<Popover open={open} onOpenChange={setOpen}>
@@ -65,14 +59,11 @@ export function ClaudeUsage({ className }: { className?: string }) {
 					<PopoverTrigger asChild>
 						<Button
 							variant="ghost"
-							size="sm"
-							className={cn("h-7 gap-1.5 px-2 text-xs", className)}
+							size="icon"
+							className={cn("size-7", className)}
+							aria-label="Claude usage"
 						>
-							<HiOutlineSparkles
-								className="size-3.5 shrink-0"
-								style={{ color: CLAUDE_ORANGE }}
-							/>
-							<span className="tabular-nums">{badgeLabel}</span>
+							<ClaudeIcon className="size-4" />
 						</Button>
 					</PopoverTrigger>
 				</TooltipTrigger>
