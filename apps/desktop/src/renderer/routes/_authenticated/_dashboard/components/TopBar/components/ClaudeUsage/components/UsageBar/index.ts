@@ -1,1 +1,1 @@
-export { UsageBar } from "./UsageBar";
+export { CLAUDE_ORANGE, UsageBar } from "./UsageBar";
