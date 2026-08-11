@@ -27,7 +27,14 @@ export function useCommittedText(
 		{ enabled: relativePath !== null },
 	);
 
-	return diffQuery.data?.oldFile.contents ?? null;
+	const committed = diffQuery.data?.oldFile.contents;
+	// `git show HEAD:<path>` fails for anything git isn't tracking — ignored
+	// files, untracked files — and the router turns that failure into an empty
+	// string. Treating that as "committed as empty" would paint every line of a
+	// gitignored file as new, so read it as "no baseline" and draw nothing.
+	// Cost: a tracked file that really is empty at HEAD shows no markers.
+	if (!committed) return null;
+	return committed;
 }
 
 /** Path relative to the worktree root, or null if it sits outside. */
