@@ -52,6 +52,22 @@ if codesign -dv --verbose=2 apps/desktop/release/mac-arm64/Superset.app 2>&1 |
 	exit 1
 fi
 
+# A build that packages cleanly can still fail to launch, and it does so
+# silently: no window, no stderr, no crash report, exit 1. Start the app and
+# require it to still be alive a few seconds later — the only check that has
+# actually distinguished a good build from a bad one here.
+APP_BIN="apps/desktop/release/mac-arm64/Superset.app/Contents/MacOS/Superset"
+"$APP_BIN" >/dev/null 2>&1 &
+APP_PID=$!
+sleep 15
+if ! kill -0 "$APP_PID" 2>/dev/null; then
+	echo "✗ the built app exits immediately — do not publish it" >&2
+	echo "  run it yourself to see: $APP_BIN" >&2
+	exit 1
+fi
+kill "$APP_PID" 2>/dev/null || true
+wait "$APP_PID" 2>/dev/null || true
+
 # latest-mac.yml is the manifest the in-app updater fetches; without it in the
 # release assets nothing updates.
 ASSETS=(apps/desktop/release/latest-mac.yml apps/desktop/release/*.dmg apps/desktop/release/*.zip apps/desktop/release/*.blockmap)

@@ -35,6 +35,7 @@ import {
 	createCodeMirrorAdapter,
 } from "./CodeEditorAdapter";
 import { createCodeMirrorTheme } from "./createCodeMirrorTheme";
+import { changeGutter, setCommittedText } from "./extensions/changeGutter";
 import { contourSelectionLayer } from "./extensions/contourSelectionLayer";
 import { buildFoldChevron } from "./extensions/foldChevron";
 import { buildFoldPlaceholder } from "./extensions/foldPlaceholder";
@@ -49,6 +50,8 @@ interface CodeEditorProps {
 	fillHeight?: boolean;
 	className?: string;
 	editorRef?: MutableRefObject<CodeEditorAdapter | null>;
+	/** HEAD text of this file; drives the git change gutter. */
+	committedText?: string | null;
 	onChange?: (value: string) => void;
 	onSave?: () => void;
 	initialScrollPosition?: { scrollTop: number; scrollLeft: number };
@@ -65,6 +68,7 @@ export function CodeEditor({
 	fillHeight = true,
 	className,
 	editorRef,
+	committedText = null,
 	onChange,
 	onSave,
 	initialScrollPosition,
@@ -126,6 +130,7 @@ export function CodeEditor({
 				highlightSpecialChars(),
 				history(),
 				foldGutter({ markerDOM: buildFoldChevron }),
+				changeGutter(),
 				codeFolding({ placeholderDOM: buildFoldPlaceholder }),
 				drawSelection(),
 				dropCursor(),
@@ -214,6 +219,14 @@ export function CodeEditor({
 			viewRef.current = null;
 		};
 	}, []);
+
+	// Feed the gutter its baseline. Runs after mount and whenever git moves
+	// underneath the file (commit, stage, branch switch).
+	useEffect(() => {
+		const view = viewRef.current;
+		if (!view) return;
+		view.dispatch({ effects: setCommittedText.of(committedText) });
+	}, [committedText]);
 
 	useEffect(() => {
 		const view = viewRef.current;
