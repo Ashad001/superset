@@ -57,16 +57,21 @@ fi
 # require it to still be alive a few seconds later — the only check that has
 # actually distinguished a good build from a bad one here.
 APP_BIN="apps/desktop/release/mac-arm64/Superset.app/Contents/MacOS/Superset"
-"$APP_BIN" >/dev/null 2>&1 &
+# Its own profile directory, so the single-instance lock held by a running
+# Superset can't make a healthy build look like a broken one.
+SMOKE_PROFILE="$(mktemp -d)"
+"$APP_BIN" --user-data-dir="$SMOKE_PROFILE" >/dev/null 2>&1 &
 APP_PID=$!
 sleep 15
 if ! kill -0 "$APP_PID" 2>/dev/null; then
 	echo "✗ the built app exits immediately — do not publish it" >&2
 	echo "  run it yourself to see: $APP_BIN" >&2
+	rm -rf "$SMOKE_PROFILE"
 	exit 1
 fi
 kill "$APP_PID" 2>/dev/null || true
 wait "$APP_PID" 2>/dev/null || true
+rm -rf "$SMOKE_PROFILE"
 
 # latest-mac.yml is the manifest the in-app updater fetches; without it in the
 # release assets nothing updates.
