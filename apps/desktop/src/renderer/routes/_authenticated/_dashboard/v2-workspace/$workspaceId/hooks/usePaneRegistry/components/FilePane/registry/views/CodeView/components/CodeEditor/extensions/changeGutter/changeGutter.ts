@@ -1,8 +1,10 @@
 import { type Extension, StateEffect, StateField } from "@codemirror/state";
 import { EditorView, GutterMarker, gutter } from "@codemirror/view";
 import {
+	closeHunkPanel,
 	hunkPanelDecorations,
 	hunkPanelTheme,
+	openHunkPanel,
 	openPanelLine,
 } from "./hunkPanel";
 import { type ChangeHunk, computeChangeHunks } from "./lineDiff";
@@ -111,11 +113,12 @@ export function changeGutter(): Extension {
 					const line = view.state.doc.lineAt(blockInfo.from).number;
 					const hunk = hunkAtLine(hunks, line);
 					if (!hunk) return false;
-					const isOpen = view.state.field(peekField) !== null;
+					// Clicking the open hunk's marker again collapses the panel.
+					const isOpen = view.state.field(openPanelLine) === hunk.fromLine;
 					view.dispatch({
 						effects: isOpen
-							? closePeek.of(null)
-							: openPeek.of(buildPeek(view, hunk)),
+							? closeHunkPanel.of(null)
+							: openHunkPanel.of(hunk.fromLine),
 					});
 					return true;
 				},
