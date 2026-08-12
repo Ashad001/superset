@@ -11,7 +11,13 @@ describe("computeChangeHunks", () => {
 	it("marks inserted lines as added", () => {
 		const hunks = computeChangeHunks(lines("a", "c"), lines("a", "b", "c"));
 		expect(hunks).toEqual([
-			{ kind: "added", fromLine: 2, toLine: 2, originalLines: [] },
+			{
+				kind: "added",
+				fromLine: 2,
+				toLine: 2,
+				originalLines: [],
+				originalFromLine: 2,
+			},
 		]);
 	});
 
@@ -21,14 +27,26 @@ describe("computeChangeHunks", () => {
 			lines("a", "B", "c"),
 		);
 		expect(hunks).toEqual([
-			{ kind: "modified", fromLine: 2, toLine: 2, originalLines: ["b"] },
+			{
+				kind: "modified",
+				fromLine: 2,
+				toLine: 2,
+				originalLines: ["b"],
+				originalFromLine: 2,
+			},
 		]);
 	});
 
 	it("marks a deletion at the line that now sits there", () => {
 		const hunks = computeChangeHunks(lines("a", "b", "c"), lines("a", "c"));
 		expect(hunks).toEqual([
-			{ kind: "removed", fromLine: 2, toLine: 2, originalLines: ["b"] },
+			{
+				kind: "removed",
+				fromLine: 2,
+				toLine: 2,
+				originalLines: ["b"],
+				originalFromLine: 2,
+			},
 		]);
 	});
 
@@ -43,6 +61,7 @@ describe("computeChangeHunks", () => {
 			fromLine: 2,
 			toLine: 3,
 			originalLines: ["b", "c"],
+			originalFromLine: 2,
 		});
 	});
 
@@ -65,9 +84,31 @@ describe("computeChangeHunks", () => {
 			lines("x", "a", "B", "c"),
 		);
 		expect(hunks).toEqual([
-			{ kind: "added", fromLine: 1, toLine: 1, originalLines: [] },
-			{ kind: "modified", fromLine: 3, toLine: 3, originalLines: ["b"] },
+			{
+				kind: "added",
+				fromLine: 1,
+				toLine: 1,
+				originalLines: [],
+				originalFromLine: 1,
+			},
+			{
+				kind: "modified",
+				fromLine: 3,
+				toLine: 3,
+				originalLines: ["b"],
+				originalFromLine: 2,
+			},
 		]);
+	});
+
+	it("reports where the committed text lived, for the panel's left column", () => {
+		// "x" inserted at the top shifts document lines but not committed ones.
+		const hunks = computeChangeHunks(
+			lines("a", "b", "c"),
+			lines("x", "a", "B", "c"),
+		);
+		expect(hunks[1]?.fromLine).toBe(3);
+		expect(hunks[1]?.originalFromLine).toBe(2);
 	});
 
 	it("handles a file created from nothing", () => {

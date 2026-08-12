@@ -20,6 +20,8 @@ export interface ChangeHunk {
 	toLine: number;
 	/** The committed lines this hunk replaced, for the peek view and revert. */
 	originalLines: string[];
+	/** 1-based line of `originalLines[0]` in the committed file. */
+	originalFromLine: number;
 }
 
 // A pathological pair (a generated file rewritten wholesale) would make the
@@ -122,6 +124,7 @@ export function computeChangeHunks(
 				fromLine: prefix + 1,
 				toLine: prefix + Math.max(currentMiddle.length, 1),
 				originalLines: originalMiddle,
+				originalFromLine: prefix + 1,
 			},
 		];
 	}
@@ -129,6 +132,9 @@ export function computeChangeHunks(
 	const script = diffCore(originalMiddle, currentMiddle);
 	const hunks: ChangeHunk[] = [];
 	let line = prefix + 1;
+	// Walks the committed file in step with `line`, so a hunk can report where
+	// its "before" text lived — the left-hand numbers in the expanded panel.
+	let originalLine = prefix + 1;
 	let index = 0;
 
 	while (index < script.length) {
@@ -136,6 +142,7 @@ export function computeChangeHunks(
 		if (!step || step.kind === "equal") {
 			index++;
 			line++;
+			originalLine++;
 			continue;
 		}
 
@@ -158,8 +165,10 @@ export function computeChangeHunks(
 			fromLine: line,
 			toLine: added === 0 ? line : line + added - 1,
 			originalLines: removed,
+			originalFromLine: originalLine,
 		});
 		line += added;
+		originalLine += removed.length;
 	}
 
 	return hunks;
