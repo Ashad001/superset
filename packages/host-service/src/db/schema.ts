@@ -1,4 +1,3 @@
-import type { HarnessKind, StopReason } from "@superset/session-protocol";
 import type {
 	AgentDefinitionId,
 	AgentIdentityId,
@@ -140,6 +139,9 @@ export const pullRequests = sqliteTable(
 		reviewDecision: text("review_decision"),
 		checksStatus: text("checks_status").notNull().default("none"),
 		checksJson: text("checks_json").notNull().default("[]"),
+		// Set when the PR is first observed merged; never cleared. Anchors
+		// "merged in the last N days" windows on the workspaces board.
+		mergedAt: integer("merged_at"),
 		lastFetchedAt: integer("last_fetched_at"),
 		error: text(),
 		createdAt: integer("created_at")
@@ -238,9 +240,15 @@ export const workspaces = sqliteTable(
 		// Null = local changes not yet pushed to the cloud mirror (dual-write
 		// era only; the column and reconciler go away in R3).
 		cloudSyncedAt: integer("cloud_synced_at"),
+		// Tombstone: null = live. Set at the destroy commit point; rows are
+		// kept forever and surface on the board's Merged/Deleted columns.
+		archivedAt: integer("archived_at"),
+		// "merged" when the linked PR was merged at destroy time.
+		archiveReason: text("archive_reason").$type<"merged" | "deleted">(),
 	},
 	(table) => [
 		index("workspaces_project_id_idx").on(table.projectId),
+		index("workspaces_archived_at_idx").on(table.archivedAt),
 		index("workspaces_upstream_ref_idx").on(
 			table.upstreamOwner,
 			table.upstreamRepo,
@@ -251,30 +259,6 @@ export const workspaces = sqliteTable(
 			.on(table.projectId)
 			.where(sql`type = 'main'`),
 	],
-);
-
-/**
- * Registry of ACP agent sessions (docs/acp-sessions.md). One row per
- * session, kept fresh on every state emit. Rows survive host restarts so the
- * manager can list them as `offline` and resurrect on demand via the
- * adapter's `session/load` — the journal itself is not persisted; transcript
- * replay comes from the agent harness's own on-disk session store.
- */
-export const acpSessions = sqliteTable(
-	"acp_sessions",
-	{
-		sessionId: text("session_id").primaryKey(),
-		workspaceId: text("workspace_id").notNull(),
-		/** Adapter-side ACP session id — the `session/load` key. */
-		acpSessionId: text("acp_session_id").notNull(),
-		harness: text().notNull().$type<HarnessKind>(),
-		cwd: text().notNull(),
-		title: text(),
-		lastStopReason: text("last_stop_reason").$type<StopReason>(),
-		createdAt: integer("created_at").notNull(),
-		updatedAt: integer("updated_at").notNull(),
-	},
-	(table) => [index("acp_sessions_workspace_id_idx").on(table.workspaceId)],
 );
 
 /**

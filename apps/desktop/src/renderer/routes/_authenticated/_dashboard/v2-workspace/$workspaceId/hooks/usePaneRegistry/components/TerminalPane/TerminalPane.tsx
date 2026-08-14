@@ -99,6 +99,9 @@ export function TerminalPane({
 	const themedUrl = new URL(baseWebsocketUrl);
 	themedUrl.searchParams.set("workspaceId", workspaceId);
 	themedUrl.searchParams.set("themeType", themeType);
+	if (paneData.createOnAttach) {
+		themedUrl.searchParams.set("create", "1");
+	}
 	const websocketUrl = themedUrl.toString();
 	const websocketUrlRef = useRef(websocketUrl);
 	websocketUrlRef.current = websocketUrl;
@@ -107,10 +110,10 @@ export function TerminalPane({
 
 	const workspaceTrpcUtils = workspaceTrpc.useUtils();
 	const invalidateTerminalSessionsRef = useRef(
-		workspaceTrpcUtils.terminal.listSessions.invalidate,
+		workspaceTrpcUtils.terminal.list.invalidate,
 	);
 	invalidateTerminalSessionsRef.current =
-		workspaceTrpcUtils.terminal.listSessions.invalidate;
+		workspaceTrpcUtils.terminal.list.invalidate;
 
 	// useCallback so useSyncExternalStore doesn't re-subscribe every render —
 	// otherwise every keystroke-triggered re-render unsubscribes and
@@ -142,9 +145,10 @@ export function TerminalPane({
 	//      container back into the live tree, preserving the buffer.
 	//   2. connect() attaches the WebSocket to that terminalId. The socket is
 	//      transport only; it does not carry creation-time intent.
-	// The pane never calls createSession — that's useV2TerminalLauncher's job,
-	// awaited at the call site before the pane is added to the store. By the
-	// time this effect runs, the host-service session already exists.
+	// The pane never calls createSession over HTTP. Optimistically-inserted
+	// panes (`createOnAttach`) let the WS attach create the session; other
+	// panes' sessions were created by useV2TerminalLauncher before the pane
+	// landed in the store.
 	// Deps narrowed to the terminal identity so provider key remount churn
 	// (workspaceId/client briefly flipping while pane data catches up) doesn't
 	// re-run this effect. Mutable inputs are read through refs.

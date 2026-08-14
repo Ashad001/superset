@@ -48,6 +48,7 @@ import { newWorkspaceAttachmentPaths } from "renderer/stores/new-workspace-attac
 import { useNewWorkspacePromptContext } from "renderer/stores/new-workspace-prompt-context";
 import { useV2WorkspaceCreateDefaultsStore } from "renderer/stores/v2-workspace-create-defaults";
 import { useDashboardNewWorkspaceDraft } from "../../DashboardNewWorkspaceDraftContext";
+import { useNewWorkspacePromptCardsVariant } from "../../hooks/useNewWorkspacePromptCardsVariant";
 import { DevicePicker } from "../DashboardNewWorkspaceForm/components/DevicePicker";
 import { useWorkspaceHostOptions } from "../DashboardNewWorkspaceForm/components/DevicePicker/hooks/useWorkspaceHostOptions";
 import { CompareBaseBranchPicker } from "../DashboardNewWorkspaceForm/PromptGroup/components/CompareBaseBranchPicker";
@@ -73,6 +74,7 @@ import {
 } from "../DashboardNewWorkspaceForm/PromptGroup/types";
 import { useSelectedHostProjectIds } from "../DashboardNewWorkspaceModalContent/hooks/useSelectedHostProjectIds";
 import { AttachmentCard } from "./components/AttachmentCard";
+import { SamplePromptCards } from "./components/SamplePromptCards";
 import { SamplePrompts } from "./components/SamplePrompts";
 
 interface NewWorkspaceScreenProps {
@@ -96,8 +98,14 @@ export function NewWorkspaceScreen({
 	const navigate = useNavigate();
 	const [promptSeed, setPromptSeed] = useState(0);
 	const openInFinderMutation = electronTrpc.external.openInFinder.useMutation();
-	const { closeModal, draft, updateDraft, resetKey } =
-		useDashboardNewWorkspaceDraft();
+	const {
+		closeModal,
+		draft,
+		updateDraft,
+		selectProject,
+		selectSession,
+		resetKey,
+	} = useDashboardNewWorkspaceDraft();
 	const attachments = useProviderAttachments();
 	const hostService = useLocalHostService();
 	const { activeHostUrl, machineId } = hostService;
@@ -207,18 +215,13 @@ export function NewWorkspaceScreen({
 		if (!preSelectedSession) appliedSessionPreselectionRef.current = false;
 	}, [preSelectedSession]);
 	useEffect(() => {
+		if (!preSelectedProjectId) appliedPreSelectionRef.current = null;
+	}, [preSelectedProjectId]);
+	useEffect(() => {
 		if (!isOpen || !areProjectsReady) return;
 		if (preSelectedSession && !appliedSessionPreselectionRef.current) {
 			appliedSessionPreselectionRef.current = true;
-			// Same clears as the manual "No project" path — a leftover
-			// project draft's PR/base-branch would fail at submit.
-			updateDraft({
-				selectedProjectId: null,
-				isSession: true,
-				linkedPR: null,
-				baseBranch: null,
-				baseBranchSource: null,
-			});
+			selectSession();
 			return;
 		}
 		const isValid = (id: string | null | undefined) =>
@@ -229,9 +232,7 @@ export function NewWorkspaceScreen({
 			isValid(preSelectedProjectId)
 		) {
 			appliedPreSelectionRef.current = preSelectedProjectId;
-			if (draft.selectedProjectId !== preSelectedProjectId) {
-				updateDraft({ selectedProjectId: preSelectedProjectId });
-			}
+			selectProject(preSelectedProjectId);
 			return;
 		}
 		// An explicit "No project" (session) choice must survive project-list
@@ -252,6 +253,8 @@ export function NewWorkspaceScreen({
 		draft.selectedProjectId,
 		draft.isSession,
 		projects,
+		selectProject,
+		selectSession,
 		updateDraft,
 	]);
 
@@ -331,6 +334,9 @@ export function NewWorkspaceScreen({
 			}) ?? null
 		);
 	}, [draft.hostId, machineId, activeHostUrl, activeOrganizationId, relayUrl]);
+
+	const promptCardsVariant = useNewWorkspacePromptCardsVariant(isOpen);
+
 	const { agents: v2Agents, isFetched: v2AgentsFetched } =
 		useV2AgentChoices(launchHostUrl);
 	const selectableAgentIds = useMemo(
@@ -476,7 +482,6 @@ export function NewWorkspaceScreen({
 			handleGoToSetup();
 			return;
 		}
-		if (isPromptEmpty) return;
 		if (submitBlocker) {
 			if ((draft.hostId ?? machineId) === machineId && !activeHostUrl) {
 				showHostServiceUnavailableToast(hostService, {
@@ -494,7 +499,6 @@ export function NewWorkspaceScreen({
 		draft.hostId,
 		handleGoToSetup,
 		hostService,
-		isPromptEmpty,
 		machineId,
 		needsSetup,
 		submitBlocker,
@@ -576,7 +580,7 @@ export function NewWorkspaceScreen({
 			</div>
 			<div className="relative flex w-full max-w-[640px] flex-col px-6 pb-8">
 				<AnimatePresence initial={false}>
-					{isPromptEmpty && (
+					{isPromptEmpty && promptCardsVariant !== null && (
 						<motion.div
 							key="sample-prompts"
 							initial={{ opacity: 0, y: 12 }}
@@ -585,7 +589,15 @@ export function NewWorkspaceScreen({
 							transition={{ type: "tween", duration: 0.15, ease: "easeOut" }}
 							className="absolute inset-x-6 bottom-full mb-1"
 						>
-							<SamplePrompts onSelect={applyPrompt} />
+							{promptCardsVariant === "test" ? (
+								<SamplePromptCards
+									hostUrl={launchHostUrl}
+									projectId={projectId}
+									onSelect={applyPrompt}
+								/>
+							) : (
+								<SamplePrompts onSelect={applyPrompt} />
+							)}
 						</motion.div>
 					)}
 				</AnimatePresence>
@@ -758,7 +770,7 @@ export function NewWorkspaceScreen({
 							</Tooltip>
 							<PromptInputSubmit
 								className="size-[22px] rounded-full border border-transparent bg-foreground/10 shadow-none p-[5px] hover:bg-foreground/20"
-								disabled={needsSetup || isPromptEmpty}
+								disabled={needsSetup}
 								onClick={(e) => {
 									e.preventDefault();
 									handleSubmit();
@@ -784,19 +796,11 @@ export function NewWorkspaceScreen({
 							isSessionSelected={draft.isSession}
 							onSelectProject={(selectedProjectId) => {
 								if (selectedProjectId === null) {
-									// Sessions can't check out a PR or fork a branch —
-									// clear repo-scoped inputs instead of failing at submit.
-									updateDraft({
-										selectedProjectId: null,
-										isSession: true,
-										linkedPR: null,
-										baseBranch: null,
-										baseBranchSource: null,
-									});
+									selectSession();
 									return;
 								}
 								setLastProjectId(selectedProjectId);
-								updateDraft({ selectedProjectId, isSession: false });
+								selectProject(selectedProjectId);
 							}}
 						/>
 						{draft.linkedPR ? (

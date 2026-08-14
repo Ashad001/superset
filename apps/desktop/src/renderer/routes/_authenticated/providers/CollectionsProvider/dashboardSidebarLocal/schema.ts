@@ -314,6 +314,13 @@ const DEFAULT_IMAGE_LINKS: LinkTierMap = {
 	metaShift: "external",
 };
 
+const DEFAULT_URL_LINKS: LinkTierMap = {
+	plain: null,
+	shift: "newTab",
+	meta: "pane",
+	metaShift: "external",
+};
+
 const LEGACY_SIDEBAR_FILE_LINKS: LinkTierMap = {
 	plain: "pane",
 	shift: "newTab",
@@ -356,7 +363,7 @@ function isCompleteLinkTierMap(
 export const v2UserPreferencesSchema = z.object({
 	id: z.literal("preferences"),
 	fileLinks: linkTierMapSchema.default(DEFAULT_LINK_TIER_MAP),
-	urlLinks: linkTierMapSchema.default(DEFAULT_LINK_TIER_MAP),
+	urlLinks: linkTierMapSchema.default(DEFAULT_URL_LINKS),
 	imageLinks: linkTierMapSchema.default(DEFAULT_IMAGE_LINKS),
 	sidebarFileLinks: linkTierMapSchema.default(DEFAULT_SIDEBAR_FILE_LINKS),
 	portOpenAction: linkActionSchema.default(DEFAULT_PORT_OPEN_ACTION),
@@ -386,7 +393,7 @@ export const V2_USER_PREFERENCES_ID = "preferences" as const;
 export const DEFAULT_V2_USER_PREFERENCES: V2UserPreferencesRow = {
 	id: V2_USER_PREFERENCES_ID,
 	fileLinks: DEFAULT_LINK_TIER_MAP,
-	urlLinks: DEFAULT_LINK_TIER_MAP,
+	urlLinks: DEFAULT_URL_LINKS,
 	imageLinks: DEFAULT_IMAGE_LINKS,
 	sidebarFileLinks: DEFAULT_SIDEBAR_FILE_LINKS,
 	portOpenAction: DEFAULT_PORT_OPEN_ACTION,
@@ -458,11 +465,19 @@ export function healV2UserPreferences(raw: unknown): V2UserPreferencesRow {
 		r.sidebarFileLinks &&
 		isCompleteLinkTierMap(r.sidebarFileLinks) &&
 		isSameLinkTierMap(r.sidebarFileLinks, LEGACY_SIDEBAR_FILE_LINKS);
+	// A stored map identical to the retired default was never customized —
+	// swap it for the current default (shift gained "newTab").
+	const shouldMigrateLegacyUrlLinks =
+		r.urlLinks &&
+		isCompleteLinkTierMap(r.urlLinks) &&
+		isSameLinkTierMap(r.urlLinks, DEFAULT_LINK_TIER_MAP);
 	return {
 		...DEFAULT_V2_USER_PREFERENCES,
 		...r,
 		fileLinks: { ...DEFAULT_V2_USER_PREFERENCES.fileLinks, ...r.fileLinks },
-		urlLinks: { ...DEFAULT_V2_USER_PREFERENCES.urlLinks, ...r.urlLinks },
+		urlLinks: shouldMigrateLegacyUrlLinks
+			? DEFAULT_V2_USER_PREFERENCES.urlLinks
+			: { ...DEFAULT_V2_USER_PREFERENCES.urlLinks, ...r.urlLinks },
 		imageLinks: { ...DEFAULT_V2_USER_PREFERENCES.imageLinks, ...r.imageLinks },
 		sidebarFileLinks: shouldMigrateLegacySidebarFileLinks
 			? DEFAULT_V2_USER_PREFERENCES.sidebarFileLinks

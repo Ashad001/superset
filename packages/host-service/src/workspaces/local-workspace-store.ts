@@ -26,9 +26,8 @@ export interface WorkspaceStoreContext {
 }
 
 /**
- * Workspaces have no cloud mirror since local-first (#5731), so the cloud
- * capture in `v2Workspace.create`/`delete` never fires for local rows —
- * the host relays the event through `analytics.captureEvent` instead.
+ * Workspaces have no cloud mirror since local-first (#5731), so the host
+ * relays workspace lifecycle events through `analytics.captureEvent`.
  */
 function trackWorkspaceEvent(
 	ctx: WorkspaceStoreContext,
@@ -61,10 +60,9 @@ function trackWorkspaceEvent(
 }
 
 /**
- * Cloud-row-compatible view of a local workspace row. Matches the shape of
- * `v2Workspace.getFromHost` / `create` responses so existing consumers of
- * cloud rows keep working when the host answers from its own table
- * (dual-write era; the cloud shape becomes the only shape in R3).
+ * The workspace row shape the host serves: the frozen cloud column set,
+ * kept so consumers written against the old cloud rows keep working now
+ * that the host answers from its own table.
  */
 export interface CloudShapedWorkspace {
 	id: string;
@@ -197,7 +195,9 @@ export function updateLocalWorkspace(
 	return row;
 }
 
-/** Delete a local row and broadcast. Idempotent. */
+/** Hard-delete a local row and broadcast. Idempotent. The destroy pipeline
+ * archives via `archiveLocalWorkspace` instead — this remains only for
+ * phantom-row cleanup (adopt-existing-worktree conflicts). */
 export function deleteLocalWorkspace(
 	ctx: WorkspaceStoreContext,
 	id: string,
@@ -213,6 +213,74 @@ export function deleteLocalWorkspace(
 		});
 		trackWorkspaceEvent(ctx, "workspace_deleted", existing);
 	}
+}
+
+/**
+ * Tombstone a local row instead of deleting it. Broadcasts the same
+ * `deleted` event shape as a hard delete so every existing consumer drops
+ * the row identically; the row itself survives for the board's
+ * Merged/Deleted history. Idempotent — re-archiving keeps the original
+ * timestamp and reason.
+ */
+export function archiveLocalWorkspace(
+	ctx: WorkspaceStoreContext,
+	id: string,
+	reason: "merged" | "deleted",
+): void {
+	const existing = getLocalWorkspace(ctx.db, id);
+	if (!existing) return;
+	if (existing.archivedAt == null) {
+		ctx.db
+			.update(workspaces)
+			.set({
+				archivedAt: Date.now(),
+				archiveReason: reason,
+				updatedAt: Date.now(),
+			})
+			.where(eq(workspaces.id, id))
+			.run();
+	}
+	ctx.eventBus.broadcastWorkspaceChanged({
+		workspaceId: id,
+		eventType: "deleted",
+		workspace: null,
+		occurredAt: Date.now(),
+	});
+	// Telemetry deliberately NOT emitted here: the destroy can still fail
+	// and un-archive. The pipeline calls trackWorkspaceDeleted once the
+	// physical cleanup actually commits.
+}
+
+/** Emit the deletion telemetry event — called by the destroy pipeline
+ * after physical cleanup succeeds, so failed/retried destroys count once. */
+export function trackWorkspaceDeleted(
+	ctx: WorkspaceStoreContext,
+	row: HostWorkspaceRow,
+): void {
+	trackWorkspaceEvent(ctx, "workspace_deleted", row);
+}
+
+/**
+ * Revive a tombstoned row — the destroy pipeline failed after the
+ * mark-first commit, so the workspace is live and retryable again.
+ * Broadcasts `created` so list patchers that dropped the row on the
+ * archive event re-add it. Idempotent.
+ */
+export function unarchiveLocalWorkspace(
+	ctx: WorkspaceStoreContext,
+	id: string,
+): void {
+	const existing = getLocalWorkspace(ctx.db, id);
+	if (!existing) return;
+	if (existing.archivedAt != null) {
+		ctx.db
+			.update(workspaces)
+			.set({ archivedAt: null, archiveReason: null, updatedAt: Date.now() })
+			.where(eq(workspaces.id, id))
+			.run();
+	}
+	const row = getLocalWorkspace(ctx.db, id);
+	if (row) emitWorkspaceChanged(ctx.eventBus, "created", row);
 }
 
 function emitWorkspaceChanged(

@@ -41,13 +41,12 @@ export interface TestHostOptions {
 	execGh?: (args: string[], options?: unknown) => Promise<unknown>;
 	chatRuntime?: unknown;
 	chatService?: unknown;
-	/** Injecting a manager also opens the acpSessions feature gate (app.ts). */
-	acpSessions?: unknown;
 }
 
 export interface TestHost {
 	app: CreateAppResult["app"];
 	api: CreateAppResult["api"];
+	eventBus: CreateAppResult["eventBus"];
 	db: HostDb;
 	dispose: () => Promise<void>;
 	psk: string;
@@ -120,7 +119,6 @@ export async function createTestHost(
 				},
 		chatRuntime: options.chatRuntime as CreateAppOptions["chatRuntime"],
 		chatService: options.chatService as CreateAppOptions["chatService"],
-		acpSessions: options.acpSessions as CreateAppOptions["acpSessions"],
 	};
 
 	const result = createApp(createOptions);
@@ -178,6 +176,7 @@ export async function createTestHost(
 	return {
 		app: result.app,
 		api: fakeApi.client,
+		eventBus: result.eventBus,
 		db: db as unknown as HostDb,
 		dispose,
 		psk,
