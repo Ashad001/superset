@@ -18,8 +18,8 @@ import {
 	folderIntentLabel,
 	LinkHoverHint,
 	useTerminalFilePolicy,
-	useTerminalImagePolicy,
 	useTerminalFolderPolicy,
+	useTerminalImagePolicy,
 	useTerminalUrlPolicy,
 } from "renderer/lib/clickPolicy";
 import {
