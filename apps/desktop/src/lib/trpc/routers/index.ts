@@ -7,13 +7,13 @@ import { createBrowserRouter } from "./browser/browser";
 import { createBrowserHistoryRouter } from "./browser-history";
 import { createCacheRouter } from "./cache";
 import { createChangesRouter } from "./changes";
-import { createChatRuntimeServiceRouter } from "./chat-runtime-service";
 import { createChatServiceRouter } from "./chat-service";
 import { createClaudeUsageRouter } from "./claude-usage";
 import { createConfigRouter } from "./config";
 import { createDeviceRouter } from "./device";
 import { createExternalRouter } from "./external";
 import { createFilesystemRouter } from "./filesystem";
+import { createGithubStarRouter } from "./github-star";
 import { createHostServiceCoordinatorRouter } from "./host-service-coordinator";
 import { createKeyboardLayoutRouter } from "./keyboardLayout";
 import { createMenuRouter } from "./menu";
@@ -33,7 +33,6 @@ import { createWorkspacesRouter } from "./workspaces";
 
 export const createAppRouter = (getWindow: () => BrowserWindow | null) => {
 	return router({
-		chatRuntimeService: createChatRuntimeServiceRouter(),
 		chatService: createChatServiceRouter(),
 		analytics: createAnalyticsRouter(),
 		browser: createBrowserRouter(),
@@ -54,6 +53,7 @@ export const createAppRouter = (getWindow: () => BrowserWindow | null) => {
 		claudeUsage: createClaudeUsageRouter(),
 		menu: createMenuRouter(),
 		external: createExternalRouter(),
+		githubStar: createGithubStarRouter(),
 		settings: createSettingsRouter(),
 		system: createSystemRouter(),
 		config: createConfigRouter(),

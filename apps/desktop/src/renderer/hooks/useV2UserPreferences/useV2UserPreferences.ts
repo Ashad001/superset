@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import {
 	DEFAULT_V2_USER_PREFERENCES,
+	type FolderTierMap,
 	type LinkAction,
 	type LinkTierMap,
 	V2_USER_PREFERENCES_ID,
@@ -18,6 +19,7 @@ export interface V2UserPreferencesApi {
 	setUrlLinks: (next: LinkTierMap) => void;
 	setImageLinks: (next: LinkTierMap) => void;
 	setSidebarFileLinks: (next: LinkTierMap) => void;
+	setFolderLinks: (next: FolderTierMap) => void;
 	setPortOpenAction: (next: LinkAction) => void;
 	setShowClaudeUsage: (next: boolean) => void;
 	setRightSidebarOpen: (next: boolean | ((prev: boolean) => boolean)) => void;
@@ -82,6 +84,25 @@ export function useV2UserPreferences(): V2UserPreferencesApi {
 	const setSidebarFileLinks = useCallback(
 		(next: LinkTierMap) => upsertTierMap("sidebarFileLinks", next),
 		[upsertTierMap],
+	);
+
+	const setFolderLinks = useCallback(
+		(next: FolderTierMap) => {
+			const existing = collections.v2UserPreferences.get(
+				V2_USER_PREFERENCES_ID,
+			);
+			if (!existing) {
+				collections.v2UserPreferences.insert({
+					...DEFAULT_V2_USER_PREFERENCES,
+					folderLinks: next,
+				});
+				return;
+			}
+			collections.v2UserPreferences.update(V2_USER_PREFERENCES_ID, (draft) => {
+				draft.folderLinks = next;
+			});
+		},
+		[collections],
 	);
 
 	const setPortOpenAction = useCallback(
@@ -266,6 +287,7 @@ export function useV2UserPreferences(): V2UserPreferencesApi {
 		setUrlLinks,
 		setImageLinks,
 		setSidebarFileLinks,
+		setFolderLinks,
 		setPortOpenAction,
 		setShowClaudeUsage,
 		setRightSidebarOpen,

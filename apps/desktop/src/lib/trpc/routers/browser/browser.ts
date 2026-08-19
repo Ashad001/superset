@@ -1,6 +1,7 @@
 import { observable } from "@trpc/server/observable";
 import { session } from "electron";
 import {
+	type BrowserOpenRequest,
 	browserManager,
 	type ForwardedKey,
 } from "main/lib/browser/browser-manager";
@@ -10,9 +11,21 @@ import { publicProcedure, router } from "../..";
 export const createBrowserRouter = () => {
 	return router({
 		register: publicProcedure
-			.input(z.object({ paneId: z.string(), webContentsId: z.number() }))
+			.input(
+				z.object({
+					paneId: z.string(),
+					webContentsId: z.number(),
+					// Optional: v1 browser panes register without workspace scoping
+					// and stay invisible to the browser bridge.
+					workspaceId: z.string().optional(),
+				}),
+			)
 			.mutation(({ input }) => {
-				browserManager.register(input.paneId, input.webContentsId);
+				browserManager.register(
+					input.paneId,
+					input.webContentsId,
+					input.workspaceId,
+				);
 				return { success: true };
 			}),
 
@@ -184,6 +197,40 @@ export const createBrowserRouter = () => {
 					};
 				});
 			}),
+
+		// External open requests (CLI/agents via the browser bridge). A global
+		// renderer hook consumes these and routes them through the same
+		// openUrl search-param flow the ports sidebar uses.
+		onOpenRequest: publicProcedure.subscription(() => {
+			return observable<BrowserOpenRequest>((emit) => {
+				const handler = (request: BrowserOpenRequest) => {
+					emit.next(request);
+				};
+				browserManager.on("open-request", handler);
+				return () => {
+					browserManager.off("open-request", handler);
+				};
+			});
+		}),
+
+		// Panes with agent work in flight (a live CDP session or an in-flight
+		// capture). The renderer registry parks these presentable — a
+		// visibility-hidden webview gets no compositor frames, so screenshots
+		// hang — and exempts them from hidden-webview LRU eviction so a pane
+		// isn't destroyed out from under an attached agent. Emits the full set
+		// on every change, plus once on subscribe.
+		onAgentActivePanes: publicProcedure.subscription(() => {
+			return observable<{ paneIds: string[] }>((emit) => {
+				const handler = (state: { paneIds: string[] }) => {
+					emit.next(state);
+				};
+				browserManager.on("agent-active", handler);
+				emit.next({ paneIds: browserManager.getAgentActivePaneIds() });
+				return () => {
+					browserManager.off("agent-active", handler);
+				};
+			});
+		}),
 
 		openDevTools: publicProcedure
 			.input(z.object({ paneId: z.string() }))

@@ -370,15 +370,13 @@ describe("workspace.create + workspace.delete integration", () => {
 		expect(result.workspace.id).toBeDefined();
 		expect(result.alreadyExists).toBe(false);
 
-		// The local row is authoritative and stays cloud-dirty so the
-		// reconciler pushes it once the cloud is reachable again.
+		// The local row is authoritative; a cloud failure never rolls it back.
 		const rows = scenario.host.db
 			.select()
 			.from(workspaces)
 			.where(eq(workspaces.name, "ws"))
 			.all();
 		expect(rows).toHaveLength(1);
-		expect(rows[0]?.cloudSyncedAt).toBeNull();
 		expect(existsSync(rows[0]?.worktreePath ?? "")).toBe(true);
 	});
 
@@ -413,6 +411,59 @@ describe("workspace.create + workspace.delete integration", () => {
 		expect(rows).toHaveLength(1);
 		expect(rows[0]?.archivedAt).not.toBeNull();
 		expect(rows[0]?.archiveReason).toBe("deleted");
+	});
+
+	test("create() after delete() on the same branch creates a fresh workspace instead of reusing the tombstone", async () => {
+		// Regress #6383: deletes tombstone the row (archivedAt) instead of
+		// removing it, so the create-time idempotency lookup must not match
+		// the archived row — otherwise create returns the dead workspace id
+		// with no worktree and the app lands on "Workspace not found".
+		const scenario = await createFeatureWorktreeScenario({
+			hostOptions: {
+				apiOverrides: {
+					...cloudFlows.workspaceDeleteOk(),
+					...cloudFlows.workspaceCreateOk(),
+				},
+			},
+		});
+		dispose = scenario.dispose;
+
+		await scenario.host.trpc.workspace.delete.mutate({
+			id: scenario.featureWorkspaceId,
+		});
+		const tombstone = scenario.host.db
+			.select()
+			.from(workspaces)
+			.where(eq(workspaces.id, scenario.featureWorkspaceId))
+			.get();
+		expect(tombstone?.archivedAt).not.toBeNull();
+
+		const result = await scenario.host.trpc.workspaces.create.mutate({
+			projectId: scenario.projectId,
+			name: "recreated",
+			branch: scenario.branch,
+		});
+
+		expect(result.alreadyExists).toBe(false);
+		expect(result.workspace.id).not.toBe(scenario.featureWorkspaceId);
+		expect(result.workspace.branch).toBe(scenario.branch);
+
+		const fresh = scenario.host.db
+			.select()
+			.from(workspaces)
+			.where(eq(workspaces.id, result.workspace.id))
+			.get();
+		expect(fresh?.archivedAt).toBeNull();
+		expect(existsSync(fresh?.worktreePath ?? "")).toBe(true);
+
+		// The tombstone keeps its history untouched.
+		const archivedAfter = scenario.host.db
+			.select()
+			.from(workspaces)
+			.where(eq(workspaces.id, scenario.featureWorkspaceId))
+			.get();
+		expect(archivedAfter?.archivedAt).not.toBeNull();
+		expect(archivedAfter?.archiveReason).toBe("deleted");
 	});
 
 	test("delete() requires authentication", async () => {

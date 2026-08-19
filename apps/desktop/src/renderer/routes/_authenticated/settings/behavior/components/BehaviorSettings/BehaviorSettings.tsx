@@ -17,6 +17,7 @@ import {
 	SETTING_ITEM_ID,
 	type SettingItemId,
 } from "../../../utils/settings-search";
+import { GithubStarRow } from "./components/GithubStarRow";
 
 interface BehaviorSettingsProps {
 	visibleItems?: SettingItemId[] | null;
@@ -38,6 +39,10 @@ export function BehaviorSettings({ visibleItems }: BehaviorSettingsProps) {
 	);
 	const showOpenLinksInApp = isItemVisible(
 		SETTING_ITEM_ID.BEHAVIOR_OPEN_LINKS_IN_APP,
+		visibleItems,
+	);
+	const showStarGithub = isItemVisible(
+		SETTING_ITEM_ID.BEHAVIOR_STAR_GITHUB,
 		visibleItems,
 	);
 
@@ -257,6 +262,8 @@ export function BehaviorSettings({ visibleItems }: BehaviorSettingsProps) {
 						/>
 					</div>
 				)}
+
+				{showStarGithub && <GithubStarRow searchQuery={searchQuery} />}
 			</div>
 		</div>
 	);

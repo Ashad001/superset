@@ -1,3 +1,7 @@
+import {
+	INTEGRATIONS,
+	type IntegrationProvider,
+} from "@superset/shared/integrations";
 import type { SettingsSection } from "renderer/stores/settings-state";
 
 export const SETTING_ITEM_ID = {
@@ -30,6 +34,7 @@ export const SETTING_ITEM_ID = {
 	BEHAVIOR_FILE_OPEN_MODE: "behavior-file-open-mode",
 	BEHAVIOR_RESOURCE_MONITOR: "behavior-resource-monitor",
 	BEHAVIOR_OPEN_LINKS_IN_APP: "behavior-open-links-in-app",
+	BEHAVIOR_STAR_GITHUB: "behavior-star-github",
 
 	GIT_BRANCH_PREFIX: "git-branch-prefix",
 	GIT_DELETE_LOCAL_BRANCH: "git-delete-local-branch",
@@ -46,6 +51,7 @@ export const SETTING_ITEM_ID = {
 	TERMINAL_BACKGROUND_LIMIT: "terminal-background-limit",
 
 	LINKS_FILE: "links-file",
+	LINKS_FOLDER: "links-folder",
 	LINKS_URL: "links-url",
 	LINKS_IMAGE: "links-image",
 	LINKS_SIDEBAR_FILE: "links-sidebar-file",
@@ -60,10 +66,6 @@ export const SETTING_ITEM_ID = {
 	EXPERIMENTAL_WORKSPACE_AGENTS: "experimental-workspace-agents",
 	EXPERIMENTAL_WAIT_FOR_SETUP_BEFORE_AGENT:
 		"experimental-wait-for-setup-before-agent",
-
-	INTEGRATIONS_LINEAR: "integrations-linear",
-	INTEGRATIONS_GITHUB: "integrations-github",
-	INTEGRATIONS_SLACK: "integrations-slack",
 
 	BILLING_OVERVIEW: "billing-overview",
 	BILLING_PLANS: "billing-plans",
@@ -96,8 +98,18 @@ export const SETTING_ITEM_ID = {
 	HOST_DELETE: "host-delete",
 } as const;
 
+/** One settings-search row per roster entry, id derived from the provider. */
+export function integrationSettingItemId<P extends IntegrationProvider>(
+	provider: P,
+): `integrations-${P}` {
+	return `integrations-${provider}`;
+}
+
+type IntegrationSettingItemId = `integrations-${IntegrationProvider}`;
+
 export type SettingItemId =
-	(typeof SETTING_ITEM_ID)[keyof typeof SETTING_ITEM_ID];
+	| (typeof SETTING_ITEM_ID)[keyof typeof SETTING_ITEM_ID]
+	| IntegrationSettingItemId;
 
 export interface SettingsItem {
 	id: SettingItemId;
@@ -118,7 +130,16 @@ export interface SettingsItem {
  */
 export type SettingVariant = "v1" | "v2" | "shared";
 
+const INTEGRATION_ITEM_VARIANTS = Object.fromEntries(
+	INTEGRATIONS.map((integration) => [
+		integrationSettingItemId(integration.provider),
+		"shared",
+	]),
+) as Record<IntegrationSettingItemId, SettingVariant>;
+
 export const SETTING_ITEM_VARIANT: Record<SettingItemId, SettingVariant> = {
+	...INTEGRATION_ITEM_VARIANTS,
+
 	[SETTING_ITEM_ID.ACCOUNT_PROFILE]: "shared",
 	[SETTING_ITEM_ID.ACCOUNT_SIGNOUT]: "shared",
 	[SETTING_ITEM_ID.ACCOUNT_DELETE]: "shared",
@@ -148,6 +169,7 @@ export const SETTING_ITEM_VARIANT: Record<SettingItemId, SettingVariant> = {
 	[SETTING_ITEM_ID.BEHAVIOR_FILE_OPEN_MODE]: "v1",
 	[SETTING_ITEM_ID.BEHAVIOR_RESOURCE_MONITOR]: "shared",
 	[SETTING_ITEM_ID.BEHAVIOR_OPEN_LINKS_IN_APP]: "v1",
+	[SETTING_ITEM_ID.BEHAVIOR_STAR_GITHUB]: "shared",
 
 	// Branch prefix exists in both UIs — v1 `GitSettings`, v2 `V2GitSettings`.
 	[SETTING_ITEM_ID.GIT_BRANCH_PREFIX]: "shared",
@@ -165,6 +187,7 @@ export const SETTING_ITEM_VARIANT: Record<SettingItemId, SettingVariant> = {
 	[SETTING_ITEM_ID.TERMINAL_BACKGROUND_LIMIT]: "v2",
 
 	[SETTING_ITEM_ID.LINKS_FILE]: "v2",
+	[SETTING_ITEM_ID.LINKS_FOLDER]: "v2",
 	[SETTING_ITEM_ID.LINKS_URL]: "v2",
 	[SETTING_ITEM_ID.LINKS_IMAGE]: "v2",
 	[SETTING_ITEM_ID.LINKS_SIDEBAR_FILE]: "v2",
@@ -179,10 +202,6 @@ export const SETTING_ITEM_VARIANT: Record<SettingItemId, SettingVariant> = {
 	[SETTING_ITEM_ID.EXPERIMENTAL_WORKSPACE_AGENTS]: "v2",
 	// Gates both the v1 renderer launch and the v2 host-side launch.
 	[SETTING_ITEM_ID.EXPERIMENTAL_WAIT_FOR_SETUP_BEFORE_AGENT]: "shared",
-
-	[SETTING_ITEM_ID.INTEGRATIONS_LINEAR]: "shared",
-	[SETTING_ITEM_ID.INTEGRATIONS_GITHUB]: "shared",
-	[SETTING_ITEM_ID.INTEGRATIONS_SLACK]: "shared",
 
 	[SETTING_ITEM_ID.BILLING_OVERVIEW]: "shared",
 	[SETTING_ITEM_ID.BILLING_PLANS]: "shared",
@@ -222,6 +241,74 @@ export function isItemAllowedForVariant(
 	if (variant === "shared") return true;
 	return isV2 ? variant === "v2" : variant === "v1";
 }
+
+/**
+ * Search keywords per integration; everything else (title, description, id)
+ * comes from the shared roster. Exhaustive so a new roster entry fails
+ * typecheck until it gets keywords.
+ */
+const INTEGRATION_KEYWORDS: Record<IntegrationProvider, string[]> = {
+	linear: ["issues", "tasks", "sync", "project management"],
+	github: [
+		"repos",
+		"repositories",
+		"pull requests",
+		"pr",
+		"sync",
+		"version control",
+		"git",
+	],
+	slack: [
+		"messages",
+		"conversations",
+		"tasks",
+		"chat",
+		"sync",
+		"communication",
+	],
+	notion: [
+		"pages",
+		"databases",
+		"data sources",
+		"comments",
+		"docs",
+		"knowledge",
+	],
+	microsoft_teams: [
+		"teams",
+		"microsoft",
+		"channels",
+		"messages",
+		"chat",
+		"communication",
+	],
+	sentry: ["errors", "issues", "monitoring", "alerts", "triage"],
+	google: [
+		"calendar",
+		"gmail",
+		"email",
+		"mail",
+		"events",
+		"triggers",
+		"automations",
+	],
+};
+
+const INTEGRATION_SEARCH_ITEMS: SettingsItem[] = INTEGRATIONS.map(
+	(integration) => ({
+		id: integrationSettingItemId(integration.provider),
+		section: "integrations",
+		title: integration.label,
+		description: integration.description,
+		keywords: [
+			"integrations",
+			integration.label.toLowerCase(),
+			...INTEGRATION_KEYWORDS[integration.provider],
+			"connect",
+			"connected",
+		],
+	}),
+);
 
 export const SETTINGS_ITEMS: SettingsItem[] = [
 	{
@@ -685,6 +772,21 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
 		],
 	},
 	{
+		id: SETTING_ITEM_ID.BEHAVIOR_STAR_GITHUB,
+		section: "behavior",
+		title: "Star Superset on GitHub",
+		description: "Support the project with a GitHub star",
+		keywords: [
+			"star",
+			"github",
+			"support",
+			"feedback",
+			"open source",
+			"repo",
+			"repository",
+		],
+	},
+	{
 		id: SETTING_ITEM_ID.AGENTS_ENABLED,
 		section: "agents",
 		title: "Enabled agents",
@@ -892,6 +994,31 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
 			"click",
 			"cmd",
 			"shift",
+		],
+	},
+	{
+		id: SETTING_ITEM_ID.LINKS_FOLDER,
+		section: "links",
+		title: "Folder links",
+		description:
+			"How folder paths open when clicked in terminals: reveal in sidebar, editor, or Finder",
+		keywords: [
+			"links",
+			"folder",
+			"directory",
+			"click",
+			"cmd",
+			"ctrl",
+			"shift",
+			"meta",
+			"finder",
+			"reveal",
+			"sidebar",
+			"editor",
+			"external",
+			"open",
+			"terminal",
+			"behavior",
 		],
 	},
 	{
@@ -1109,59 +1236,7 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
 			"install",
 		],
 	},
-	{
-		id: SETTING_ITEM_ID.INTEGRATIONS_LINEAR,
-		section: "integrations",
-		title: "Linear",
-		description: "Sync issues bidirectionally with Linear",
-		keywords: [
-			"integrations",
-			"linear",
-			"issues",
-			"tasks",
-			"sync",
-			"connect",
-			"connected",
-			"project management",
-		],
-	},
-	{
-		id: SETTING_ITEM_ID.INTEGRATIONS_GITHUB,
-		section: "integrations",
-		title: "GitHub",
-		description: "Connect repos and sync pull requests",
-		keywords: [
-			"integrations",
-			"github",
-			"repos",
-			"repositories",
-			"pull requests",
-			"pr",
-			"sync",
-			"connect",
-			"connected",
-			"version control",
-			"git",
-		],
-	},
-	{
-		id: SETTING_ITEM_ID.INTEGRATIONS_SLACK,
-		section: "integrations",
-		title: "Slack",
-		description: "Manage tasks from Slack conversations",
-		keywords: [
-			"integrations",
-			"slack",
-			"messages",
-			"conversations",
-			"tasks",
-			"chat",
-			"sync",
-			"connect",
-			"connected",
-			"communication",
-		],
-	},
+	...INTEGRATION_SEARCH_ITEMS,
 	{
 		id: SETTING_ITEM_ID.BILLING_OVERVIEW,
 		section: "billing",
