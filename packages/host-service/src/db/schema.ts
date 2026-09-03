@@ -265,3 +265,42 @@ export const workspaces = sqliteTable(
 			.where(sql`type = 'main'`),
 	],
 );
+
+/**
+ * FORK-ONLY: personal task board, local to this host.
+ *
+ * Upstream's Tasks live in the hosted database behind a Pro entitlement; this
+ * is a separate, self-contained table so the two never interact. Single-user
+ * by definition (it's your machine), so there is no assignee, no activity log
+ * and no status catalogue — just three fixed columns.
+ *
+ * A null projectId means the task isn't tied to a repo; it still shows on the
+ * "All" board.
+ */
+export const localTasks = sqliteTable(
+	"local_tasks",
+	{
+		id: text().primaryKey(),
+		projectId: text("project_id").references(() => projects.id, {
+			onDelete: "cascade",
+		}),
+		title: text().notNull(),
+		status: text()
+			.notNull()
+			.default("todo")
+			.$type<"todo" | "in_progress" | "done">(),
+		// Sparse rank within a column so a reorder rewrites one row, not the
+		// whole column. Gaps are expected.
+		position: integer().notNull().default(0),
+		createdAt: integer("created_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+		updatedAt: integer("updated_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+	},
+	(table) => [
+		index("local_tasks_project_id_idx").on(table.projectId),
+		index("local_tasks_status_idx").on(table.status),
+	],
+);

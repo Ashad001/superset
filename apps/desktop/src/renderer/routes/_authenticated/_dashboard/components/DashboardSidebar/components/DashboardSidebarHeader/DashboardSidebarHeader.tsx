@@ -10,7 +10,10 @@ import { cn } from "@superset/ui/utils";
 import { useMatchRoute, useNavigate } from "@tanstack/react-router";
 import { useRef } from "react";
 import { GoGitPullRequest } from "react-icons/go";
-import { HiOutlineClipboardDocumentList } from "react-icons/hi2";
+import {
+	HiOutlineClipboardDocumentList,
+	HiOutlineSquares2X2,
+} from "react-icons/hi2";
 import { LuClock, LuGauge, LuLayers, LuPlus, LuSearch } from "react-icons/lu";
 import {
 	VscFolderOpened,
@@ -125,6 +128,7 @@ export function DashboardSidebarHeader({
 		to: "/pull-requests",
 		fuzzy: true,
 	});
+	const isMyTasksOpen = !!matchRoute({ to: "/my-tasks", fuzzy: true });
 	const isAutomationsOpen = !!matchRoute({ to: "/automations", fuzzy: true });
 	const isUsageOpen = !!matchRoute({ to: "/usage", fuzzy: true });
 	const { myFailedCount } = useFailedAutomations();
@@ -169,6 +173,10 @@ export function DashboardSidebarHeader({
 				}),
 			});
 		});
+	};
+
+	const handleMyTasksClick = () => {
+		navigate({ to: "/my-tasks" });
 	};
 
 	const handleUsageClick = () => {
@@ -315,6 +323,26 @@ export function DashboardSidebarHeader({
 							</button>
 						</TooltipTrigger>
 						<TooltipContent side="right">Tasks</TooltipContent>
+					</Tooltip>
+
+					<Tooltip delayDuration={300}>
+						<TooltipTrigger asChild>
+							<button
+								type="button"
+								onClick={handleMyTasksClick}
+								aria-label="My tasks"
+								aria-current={isMyTasksOpen ? "page" : undefined}
+								className={cn(
+									"flex size-7 items-center justify-center rounded-md transition-colors",
+									isMyTasksOpen
+										? "bg-fill-selected text-muted-foreground"
+										: "text-muted-foreground hover:bg-fill-hover",
+								)}
+							>
+								<HiOutlineSquares2X2 className="size-3.5" />
+							</button>
+						</TooltipTrigger>
+						<TooltipContent side="right">My tasks</TooltipContent>
 					</Tooltip>
 
 					<Tooltip delayDuration={300}>
@@ -523,6 +551,22 @@ export function DashboardSidebarHeader({
 			>
 				<HiOutlineClipboardDocumentList className="size-3.5 shrink-0 text-muted-foreground" />
 				<span className="flex-1 text-left">Tasks</span>
+			</button>
+
+			<button
+				type="button"
+				onClick={handleMyTasksClick}
+				aria-label="My tasks"
+				aria-current={isMyTasksOpen ? "page" : undefined}
+				className={cn(
+					"flex w-full items-center gap-2 rounded-md px-2 py-1 text-[13px] font-medium transition-colors",
+					isMyTasksOpen
+						? "bg-fill-selected text-foreground"
+						: "text-muted-foreground hover:bg-fill-hover hover:text-foreground",
+				)}
+			>
+				<HiOutlineSquares2X2 className="size-3.5 shrink-0 text-muted-foreground" />
+				<span className="flex-1 text-left">My tasks</span>
 			</button>
 
 			<button
