@@ -1,6 +1,8 @@
 import {
 	DndContext,
 	type DragEndEvent,
+	DragOverlay,
+	type DragStartEvent,
 	PointerSensor,
 	useSensor,
 	useSensors,
@@ -19,7 +21,8 @@ import {
 	TASK_COLUMNS,
 } from "../../constants";
 import { useLocalTasks } from "../../hooks/useLocalTasks";
-import { AddTaskInput } from "./components/AddTaskInput";
+import { nextColumnOrder } from "../../utils/nextColumnOrder";
+import { TaskCardPreview } from "./components/TaskCardPreview";
 import { TaskColumn } from "./components/TaskColumn";
 
 interface MyTasksBoardProps {
@@ -28,16 +31,22 @@ interface MyTasksBoardProps {
 
 export function MyTasksBoard({ hostUrl }: MyTasksBoardProps) {
 	const [projectId, setProjectId] = useState<string>(ALL_PROJECTS);
+	const [draggingId, setDraggingId] = useState<string | null>(null);
 	const isAll = projectId === ALL_PROJECTS;
 
-	const { tasks, projects, create, update, remove } = useLocalTasks(
-		hostUrl,
-		isAll ? null : projectId,
-	);
+	const { tasks, projects, create, update, remove, reorder, clearStatus } =
+		useLocalTasks(hostUrl);
 
 	// Render whatever rows we already have, even while refetching.
-	const rows = tasks.data ?? [];
+	const allRows = tasks.data ?? [];
 	const projectRows = projects.data ?? [];
+
+	// The filter only narrows what's drawn. Drag math runs against every row,
+	// because a column's positions are shared by all projects.
+	const rows = useMemo(
+		() => (isAll ? allRows : allRows.filter((t) => t.projectId === projectId)),
+		[allRows, isAll, projectId],
+	);
 
 	const projectNameById = useMemo(
 		() => new Map(projectRows.map((p) => [p.id, p.name])),
@@ -50,20 +59,34 @@ export function MyTasksBoard({ hostUrl }: MyTasksBoardProps) {
 	);
 
 	const handleDragEnd = ({ active, over }: DragEndEvent) => {
+		setDraggingId(null);
 		if (!over) return;
-		const dropped = over.data.current?.status as LocalTaskStatus | undefined;
-		const target = dropped ?? rows.find((t) => t.id === over.id)?.status;
-		const dragged = rows.find((t) => t.id === active.id);
-		if (!target || !dragged || dragged.status === target) return;
-		update.mutate({ id: dragged.id, status: target });
+
+		// Dropping on empty column space gives the column's droppable; dropping
+		// on a card gives that card, and its column is the target.
+		const overTask = allRows.find((t) => t.id === over.id);
+		const target =
+			(over.data.current?.status as LocalTaskStatus | undefined) ??
+			overTask?.status;
+		if (!target) return;
+
+		const ids = nextColumnOrder(
+			allRows,
+			String(active.id),
+			target,
+			overTask?.id ?? null,
+		);
+		if (ids) reorder.mutate({ status: target, ids });
 	};
+
+	const draggingTask = rows.find((t) => t.id === draggingId);
 
 	return (
 		<div className="flex h-full w-full flex-col overflow-hidden">
 			{/* Window-drag leaf standing in for the hidden TopBar. */}
 			<div className="drag h-10 shrink-0" />
 
-			<div className="flex shrink-0 items-center gap-3 px-6 pb-3">
+			<div className="mx-auto flex w-full max-w-[1400px] shrink-0 items-center gap-3 px-6 pb-3">
 				<h1 className="text-base font-semibold">My tasks</h1>
 				<Select value={projectId} onValueChange={setProjectId}>
 					<SelectTrigger size="sm" className="w-52">
@@ -78,42 +101,75 @@ export function MyTasksBoard({ hostUrl }: MyTasksBoardProps) {
 						))}
 					</SelectContent>
 				</Select>
-				<div className="ml-auto w-72">
-					<AddTaskInput
-						disabled={!hostUrl}
-						onAdd={(title) =>
-							create.mutate({
-								title,
-								projectId: isAll ? null : projectId,
-								status: "todo",
-							})
-						}
-					/>
-				</div>
+				<span className="ml-auto text-xs tabular-nums text-muted-foreground">
+					{rows.length} {rows.length === 1 ? "task" : "tasks"}
+				</span>
 			</div>
 
-			<DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-				<div className="flex min-h-0 flex-1 gap-2 overflow-x-auto px-4 pb-4">
-					{TASK_COLUMNS.map(({ status, label }) => (
-						<TaskColumn
-							key={status}
-							status={status}
-							label={label}
-							showProject={isAll}
-							tasks={rows
-								.filter((task) => task.status === status)
-								.map((task) => ({
+			<DndContext
+				sensors={sensors}
+				onDragStart={({ active }: DragStartEvent) =>
+					setDraggingId(String(active.id))
+				}
+				onDragCancel={() => setDraggingId(null)}
+				onDragEnd={handleDragEnd}
+			>
+				{/* Centred and width-capped: three columns sharing a 2560px monitor
+				    read as a stretched table, not a board. */}
+				<div className="mx-auto flex min-h-0 w-full max-w-[1400px] flex-1 gap-3 overflow-x-auto overflow-y-hidden px-6 pb-4">
+					{TASK_COLUMNS.map(({ status, label }) => {
+						const columnTasks = rows.filter((task) => task.status === status);
+						return (
+							<TaskColumn
+								key={status}
+								status={status}
+								label={label}
+								showProject={isAll}
+								tasks={columnTasks.map((task) => ({
 									id: task.id,
 									title: task.title,
 									projectName: task.projectId
 										? (projectNameById.get(task.projectId) ?? null)
 										: null,
 								}))}
-							onRename={(id, title) => update.mutate({ id, title })}
-							onRemove={(id) => remove.mutate({ id })}
-						/>
-					))}
+								disabled={!hostUrl}
+								onAdd={(title) =>
+									create.mutate({
+										title,
+										projectId: isAll ? null : projectId,
+										status,
+									})
+								}
+								onClear={
+									status === "done" && columnTasks.length > 0
+										? () =>
+												clearStatus.mutate({
+													status,
+													projectId: isAll ? null : projectId,
+												})
+										: undefined
+								}
+								onRename={(id, title) => update.mutate({ id, title })}
+								onRemove={(id) => remove.mutate({ id })}
+							/>
+						);
+					})}
 				</div>
+
+				{/* Without an overlay the card stays in the column's scroll box and
+				    gets clipped the moment it's dragged past the edge. */}
+				<DragOverlay>
+					{draggingTask ? (
+						<TaskCardPreview
+							title={draggingTask.title}
+							projectName={
+								isAll && draggingTask.projectId
+									? (projectNameById.get(draggingTask.projectId) ?? null)
+									: null
+							}
+						/>
+					) : null}
+				</DragOverlay>
 			</DndContext>
 		</div>
 	);

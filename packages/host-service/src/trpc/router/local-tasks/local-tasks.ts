@@ -79,6 +79,34 @@ export const localTasksRouter = router({
 				.get();
 		}),
 
+	/**
+	 * Rewrite one column's order from the ids the board dropped into, setting
+	 * `status` too so a cross-column drag is the same call.
+	 *
+	 * Sent as a whole list rather than a nudged position: `position` is an
+	 * integer column, so bisecting between two neighbours runs out of room after
+	 * ~10 drops into the same gap. A column holds tens of rows on one machine,
+	 * so renumbering it outright is cheaper than detecting a collapsed gap.
+	 */
+	reorder: protectedProcedure
+		.input(z.object({ status: statusSchema, ids: z.array(z.string()) }))
+		.mutation(({ ctx, input }) => {
+			const updatedAt = Date.now();
+			ctx.db.transaction((tx) => {
+				input.ids.forEach((id, index) => {
+					tx.update(localTasks)
+						.set({
+							status: input.status,
+							position: (index + 1) * POSITION_STEP,
+							updatedAt,
+						})
+						.where(eq(localTasks.id, id))
+						.run();
+				});
+			});
+			return { status: input.status };
+		}),
+
 	remove: protectedProcedure
 		.input(z.object({ id: z.string() }))
 		.mutation(({ ctx, input }) => {

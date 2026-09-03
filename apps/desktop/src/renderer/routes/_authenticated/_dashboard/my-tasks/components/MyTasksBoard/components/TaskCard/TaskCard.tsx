@@ -3,6 +3,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@superset/ui/utils";
 import { useState } from "react";
 import { LuTrash2 } from "react-icons/lu";
+import { TASK_CARD_CLASS } from "./constants";
 
 export interface TaskCardTask {
 	id: string;
@@ -45,9 +46,10 @@ export function TaskCard({
 			ref={setNodeRef}
 			style={{ transform: CSS.Transform.toString(transform), transition }}
 			className={cn(
-				"group relative rounded-md border border-border bg-background px-2.5 py-2",
-				"hover:border-border-hover",
-				isDragging && "opacity-50",
+				TASK_CARD_CLASS,
+				"group relative hover:border-border-hover",
+				// The overlay copy is what the cursor carries; leave a gap behind it.
+				isDragging && "opacity-40",
 			)}
 			{...attributes}
 			{...listeners}
@@ -55,7 +57,8 @@ export function TaskCard({
 			{draft === null ? (
 				<button
 					type="button"
-					className="w-full text-left text-[13px] leading-snug"
+					title="Double-click to rename"
+					className="w-full pr-5 text-left text-[13px] leading-snug"
 					onDoubleClick={() => setDraft(task.title)}
 				>
 					{task.title}
@@ -65,6 +68,9 @@ export function TaskCard({
 					// biome-ignore lint/a11y/noAutofocus: double-click to edit implies focus
 					autoFocus
 					value={draft}
+					// The card body is the drag handle, so without this, selecting
+					// text with the mouse lifts the card instead.
+					onPointerDown={(e) => e.stopPropagation()}
 					onChange={(e) => setDraft(e.target.value)}
 					onBlur={commit}
 					onKeyDown={(e) => {
@@ -76,7 +82,7 @@ export function TaskCard({
 			)}
 
 			{showProject && task.projectName && (
-				<span className="mt-1 block truncate text-[11px] text-muted-foreground">
+				<span className="mt-1.5 inline-block max-w-full truncate rounded bg-fill-hover px-1.5 py-0.5 text-[10px] text-muted-foreground">
 					{task.projectName}
 				</span>
 			)}
