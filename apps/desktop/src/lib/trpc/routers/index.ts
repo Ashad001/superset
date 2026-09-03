@@ -5,12 +5,12 @@ import { createAuthRouter } from "./auth";
 import { createAutoUpdateRouter } from "./auto-update";
 import { createBrowserRouter } from "./browser/browser";
 import { createBrowserHistoryRouter } from "./browser-history";
-import { createCacheRouter } from "./cache";
 import { createChangesRouter } from "./changes";
 import { createChatServiceRouter } from "./chat-service";
 import { createClaudeUsageRouter } from "./claude-usage";
 import { createConfigRouter } from "./config";
 import { createDeviceRouter } from "./device";
+import { createDownloadsRouter } from "./downloads";
 import { createExternalRouter } from "./external";
 import { createFilesystemRouter } from "./filesystem";
 import { createGithubStarRouter } from "./github-star";
@@ -20,10 +20,13 @@ import { createMenuRouter } from "./menu";
 import { createMigrationRouter } from "./migration";
 import { createNotificationsRouter } from "./notifications";
 import { createPermissionsRouter } from "./permissions";
+import { createPluginsRouter } from "./plugins";
+import { createPortForwardsRouter } from "./port-forwards";
 import { createPortsRouter } from "./ports";
 import { createProjectsRouter } from "./projects";
 import { createResourceMetricsRouter } from "./resource-metrics";
 import { createRingtoneRouter } from "./ringtone";
+import { createScreenshotsRouter } from "./screenshots";
 import { createSettingsRouter } from "./settings";
 import { createSystemRouter } from "./system";
 import { createTerminalRouter } from "./terminal";
@@ -37,10 +40,11 @@ export const createAppRouter = (getWindow: () => BrowserWindow | null) => {
 		analytics: createAnalyticsRouter(),
 		browser: createBrowserRouter(),
 		browserHistory: createBrowserHistoryRouter(),
+		downloads: createDownloadsRouter(),
+		screenshots: createScreenshotsRouter(),
 		auth: createAuthRouter(),
 		autoUpdate: createAutoUpdateRouter(),
-		cache: createCacheRouter(),
-		window: createWindowRouter(getWindow),
+		window: createWindowRouter(),
 		projects: createProjectsRouter(getWindow),
 		workspaces: createWorkspacesRouter(),
 		terminal: createTerminalRouter(),
@@ -48,7 +52,9 @@ export const createAppRouter = (getWindow: () => BrowserWindow | null) => {
 		filesystem: createFilesystemRouter(),
 		notifications: createNotificationsRouter(getWindow),
 		permissions: createPermissionsRouter(),
+		plugins: createPluginsRouter(),
 		ports: createPortsRouter(),
+		portForwards: createPortForwardsRouter(),
 		resourceMetrics: createResourceMetricsRouter(),
 		claudeUsage: createClaudeUsageRouter(),
 		menu: createMenuRouter(),

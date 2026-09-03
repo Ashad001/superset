@@ -1,4 +1,5 @@
 import { auth } from "@superset/auth/server";
+import { i18n } from "@superset/i18n";
 import { COMPANY } from "@superset/shared/constants";
 import {
 	Breadcrumb,
@@ -18,7 +19,6 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { env } from "@/env";
-import { api } from "@/trpc/server";
 
 import { AppSidebar } from "./components/AppSidebar";
 
@@ -39,16 +39,15 @@ export default async function DashboardLayout({
 		redirect(env.NEXT_PUBLIC_WEB_URL);
 	}
 
-	const trpc = await api();
-	const user = await trpc.user.me.query();
-
-	if (!user) {
-		redirect(env.NEXT_PUBLIC_WEB_URL);
-	}
-
 	return (
 		<SidebarProvider>
-			<AppSidebar user={user} />
+			<AppSidebar
+				user={{
+					name: session.user.name,
+					email: session.user.email,
+					image: session.user.image,
+				}}
+			/>
 			<SidebarInset>
 				<header className="bg-background sticky top-0 flex h-16 shrink-0 items-center gap-2 border-b px-4">
 					<SidebarTrigger className="-ml-1" />
@@ -60,7 +59,9 @@ export default async function DashboardLayout({
 							</BreadcrumbItem>
 							<BreadcrumbSeparator className="hidden md:block" />
 							<BreadcrumbItem>
-								<BreadcrumbPage>Home</BreadcrumbPage>
+								<BreadcrumbPage>
+									{i18n._({ id: "admin.breadcrumb.home", message: "Home" })}
+								</BreadcrumbPage>
 							</BreadcrumbItem>
 						</BreadcrumbList>
 					</Breadcrumb>

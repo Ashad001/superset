@@ -1,6 +1,7 @@
 import type { WorkspaceStore } from "@superset/panes";
 import { useCallback } from "react";
 import type { V2TerminalPresetRow } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal";
+import { useSettings } from "renderer/stores/settings";
 import type { StoreApi } from "zustand/vanilla";
 import type {
 	BrowserPaneData,
@@ -8,9 +9,13 @@ import type {
 	CommentPaneData,
 	DiffFocusSide,
 	DiffPaneData,
+	PagePaneData,
 	PaneViewerData,
 	TerminalPaneData,
 } from "../../types";
+import { openChangesPaneInStore } from "../../utils/openChangesPaneInStore";
+import { openPagePaneInStore } from "../../utils/openPagePaneInStore";
+import { useDefaultBrowserUrl } from "../useDefaultBrowserUrl";
 import type { TerminalLauncher } from "../useV2TerminalLauncher";
 
 export function useWorkspacePaneOpeners({
@@ -37,7 +42,9 @@ export function useWorkspacePaneOpeners({
 	addTerminalTab: () => Promise<void>;
 	addChatV3Tab: () => void;
 	addBrowserTab: () => void;
+	openChangesPane: () => void;
 	openCommentPane: (comment: CommentPaneData) => void;
+	openPagePane: (page: PagePaneData) => void;
 } {
 	const openDiffPane = useCallback(
 		(
@@ -147,18 +154,19 @@ export function useWorkspacePaneOpeners({
 		});
 	}, [store]);
 
+	const defaultBrowserUrl = useDefaultBrowserUrl();
 	const addBrowserTab = useCallback(() => {
 		store.getState().addTab({
 			panes: [
 				{
 					kind: "browser",
 					data: {
-						url: "about:blank",
+						url: defaultBrowserUrl,
 					} as BrowserPaneData,
 				},
 			],
 		});
-	}, [store]);
+	}, [store, defaultBrowserUrl]);
 
 	const openCommentPane = useCallback(
 		(comment: CommentPaneData) => {
@@ -187,11 +195,24 @@ export function useWorkspacePaneOpeners({
 		[store],
 	);
 
+	const openChangesPane = useCallback(() => {
+		openChangesPaneInStore(store, useSettings.getState().changesOpenTarget);
+	}, [store]);
+
+	const openPagePane = useCallback(
+		(page: PagePaneData) => {
+			openPagePaneInStore(store, page);
+		},
+		[store],
+	);
+
 	return {
 		openDiffPane,
 		addTerminalTab,
 		addChatV3Tab,
 		addBrowserTab,
+		openChangesPane,
 		openCommentPane,
+		openPagePane,
 	};
 }

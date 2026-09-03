@@ -1,12 +1,14 @@
 /**
- * Curated per-agent model and effort catalogs for the workspace-create
- * pickers.
+ * Curated per-agent model, effort, and launch-mode catalogs for the
+ * workspace-create pickers.
  *
  * Entries are keyed by terminal-agent presetId (see
  * `builtin-terminal-agents.ts`). Agents absent from this list don't support
  * model selection and render no picker. Model ids are the exact values the CLI
  * accepts after `modelFlag` (opencode requires `provider/model`, so the
  * provider is baked into the id).
+ * The virtual `omp` preset is resolved from the configured executable so OMP
+ * options never leak onto the legacy `pi` CLI.
  *
  * The lists are hand-maintained and expected to drift with CLI releases —
  * update them here when a tool adds or retires models.
@@ -15,6 +17,12 @@
 export interface AgentModelOption {
 	id: string;
 	label: string;
+	/**
+	 * Optional section header this option sits under in the picker. Options
+	 * without one render flat, so a catalog only pays for grouping when its
+	 * list has more than one kind of entry in it.
+	 */
+	group?: string;
 }
 
 export interface AgentModelSupport {
@@ -39,6 +47,11 @@ export const SUPERSET_CHAT_MODELS: readonly SupersetChatModel[] = [
 	{ id: "anthropic/claude-opus-5", label: "Opus 5", provider: "Anthropic" },
 	{ id: "anthropic/claude-opus-4-8", label: "Opus 4.8", provider: "Anthropic" },
 	{ id: "anthropic/claude-opus-4-7", label: "Opus 4.7", provider: "Anthropic" },
+	{
+		id: "anthropic/claude-fable-5-1",
+		label: "Fable 5.1",
+		provider: "Anthropic",
+	},
 	{ id: "anthropic/claude-fable-5", label: "Fable 5", provider: "Anthropic" },
 	{
 		id: "anthropic/claude-sonnet-4-6",
@@ -63,29 +76,52 @@ export const SUPERSET_CHAT_MODELS: readonly SupersetChatModel[] = [
 	{ id: "openai/gpt-5.3-codex", label: "GPT-5.3 Codex", provider: "OpenAI" },
 ];
 
+const LATEST_GROUP = "Latest";
+const PINNED_GROUP = "Pinned releases";
+const CURRENT_GROUP = "Current";
+const CODEX_RETIRING_GROUP = "Retiring 2026-08-31";
+
 export const AGENT_MODEL_SUPPORT: readonly AgentModelSupport[] = [
 	{
 		presetId: "claude",
 		modelFlag: "--model",
 		models: [
-			{ id: "fable", label: "Fable" },
-			{ id: "opus", label: "Opus" },
-			{ id: "claude-opus-5", label: "Opus 5" },
-			{ id: "sonnet", label: "Sonnet" },
-			{ id: "haiku", label: "Haiku" },
+			// Aliases track whatever the CLI considers newest in each family;
+			// the pinned ids stay on one model release, which is what teams
+			// standardising on a known model need. The group headers carry
+			// that distinction so the labels don't have to.
+			{ id: "fable", label: "Fable", group: LATEST_GROUP },
+			{ id: "opus", label: "Opus", group: LATEST_GROUP },
+			{ id: "sonnet", label: "Sonnet", group: LATEST_GROUP },
+			{ id: "haiku", label: "Haiku", group: LATEST_GROUP },
+			{ id: "claude-fable-5-1", label: "Fable 5.1", group: PINNED_GROUP },
+			{ id: "claude-fable-5", label: "Fable 5", group: PINNED_GROUP },
+			{ id: "claude-opus-5", label: "Opus 5", group: PINNED_GROUP },
+			{ id: "claude-sonnet-5", label: "Sonnet 5", group: PINNED_GROUP },
+			{ id: "claude-opus-4-8", label: "Opus 4.8", group: PINNED_GROUP },
+			{ id: "claude-opus-4-7", label: "Opus 4.7", group: PINNED_GROUP },
+			{ id: "claude-opus-4-6", label: "Opus 4.6", group: PINNED_GROUP },
+			{ id: "claude-opus-4-5", label: "Opus 4.5", group: PINNED_GROUP },
+			{ id: "claude-sonnet-4-6", label: "Sonnet 4.6", group: PINNED_GROUP },
+			{ id: "claude-haiku-4-5", label: "Haiku 4.5", group: PINNED_GROUP },
 		],
 	},
 	{
 		presetId: "codex",
 		modelFlag: "--model",
 		models: [
-			{ id: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
-			{ id: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
-			{ id: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
-			{ id: "gpt-5.5", label: "GPT-5.5" },
-			// Retiring from Codex on 2026-08-31; superseded by gpt-5.6-terra/luna.
-			{ id: "gpt-5.4", label: "GPT-5.4" },
-			{ id: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
+			{ id: "gpt-5.6-sol", label: "GPT-5.6 Sol", group: CURRENT_GROUP },
+			{ id: "gpt-5.6-terra", label: "GPT-5.6 Terra", group: CURRENT_GROUP },
+			{ id: "gpt-5.6-luna", label: "GPT-5.6 Luna", group: CURRENT_GROUP },
+			{ id: "gpt-5.5", label: "GPT-5.5", group: CURRENT_GROUP },
+			// Superseded by gpt-5.6-terra/luna; the header dates the retirement
+			// so it reaches the person picking rather than only this file.
+			{ id: "gpt-5.4", label: "GPT-5.4", group: CODEX_RETIRING_GROUP },
+			{
+				id: "gpt-5.3-codex",
+				label: "GPT-5.3 Codex",
+				group: CODEX_RETIRING_GROUP,
+			},
 		],
 	},
 	{
@@ -136,13 +172,38 @@ export const AGENT_MODEL_SUPPORT: readonly AgentModelSupport[] = [
 			// openai ids verified against `opencode models` (2026-08-05), which
 			// no longer lists the old `openai/gpt-5`. anthropic ids follow the
 			// same models.dev catalog but need an authed anthropic provider to
-			// appear in that listing.
+			// appear in that listing; `claude-fable-5-1` was checked against
+			// models.dev directly (2026-09-01).
 			{ id: "anthropic/claude-opus-5", label: "Claude Opus 5" },
+			{ id: "anthropic/claude-fable-5-1", label: "Claude Fable 5.1" },
 			{ id: "anthropic/claude-fable-5", label: "Claude Fable 5" },
 			{ id: "anthropic/claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
 			{ id: "openai/gpt-5.6-sol", label: "GPT-5.6 Sol" },
 			{ id: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra" },
 			{ id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna" },
+		],
+	},
+	{
+		presetId: "omp",
+		modelFlag: "--model",
+		models: [
+			// OMP accepts configured role aliases as well as exact
+			// provider/model selectors. Exact ids verified against
+			// `omp models --json` in OMP 18.0.1; `claude-fable-5-1` against the
+			// catalog bundled in OMP 18.1.2.
+			{ id: "@smol", label: "Configured fast model" },
+			{ id: "@slow", label: "Configured slow model" },
+			{ id: "@plan", label: "Configured plan model" },
+			{ id: "anthropic/claude-opus-5", label: "Claude Opus 5" },
+			{ id: "anthropic/claude-fable-5-1", label: "Claude Fable 5.1" },
+			{ id: "anthropic/claude-fable-5", label: "Claude Fable 5" },
+			{
+				id: "anthropic/claude-sonnet-4-6",
+				label: "Claude Sonnet 4.6",
+			},
+			{ id: "openai-codex/gpt-5.6-sol", label: "GPT-5.6 Sol" },
+			{ id: "openai-codex/gpt-5.6-terra", label: "GPT-5.6 Terra" },
+			{ id: "openai-codex/gpt-5.6-luna", label: "GPT-5.6 Luna" },
 		],
 	},
 	{
@@ -170,6 +231,16 @@ export const AGENT_MODEL_SUPPORT: readonly AgentModelSupport[] = [
 	},
 ];
 
+export interface AgentEffortOption extends AgentModelOption {
+	/**
+	 * Model ids that accept this effort, when only some do. Absent means every
+	 * model the agent offers takes it. Codex's two top levels arrived with
+	 * GPT-5.6 and the models below it reject them, so the picker only offers
+	 * them next to a model that has them.
+	 */
+	models?: readonly string[];
+}
+
 export interface AgentEffortSupport {
 	presetId: string;
 	effortFlag: string;
@@ -179,8 +250,27 @@ export interface AgentEffortSupport {
 	 * `-c model_reasoning_effort=high`.
 	 */
 	effortValuePrefix?: string;
-	efforts: AgentModelOption[];
+	efforts: AgentEffortOption[];
 }
+
+export interface AgentModeOption extends AgentModelOption {
+	/** Exact argv tokens appended when this mode is selected. */
+	args: string[];
+}
+
+export interface AgentModeSupport {
+	presetId: string;
+	modes: AgentModeOption[];
+}
+
+const PI_THINKING_LEVELS: AgentModelOption[] = [
+	{ id: "off", label: "Off" },
+	{ id: "minimal", label: "Minimal" },
+	{ id: "low", label: "Low" },
+	{ id: "medium", label: "Medium" },
+	{ id: "high", label: "High" },
+	{ id: "xhigh", label: "xHigh" },
+];
 
 /**
  * Curated per-agent reasoning-effort catalogs, mirroring
@@ -223,6 +313,16 @@ export const AGENT_EFFORT_SUPPORT: readonly AgentEffortSupport[] = [
 			{ id: "medium", label: "Medium" },
 			{ id: "high", label: "High" },
 			{ id: "xhigh", label: "xHigh" },
+			// Per-model support taken from Codex's own model catalog
+			// (`supported_reasoning_levels`, codex-cli 0.149.1): every GPT-5.6
+			// model takes `max`, and `ultra` — max reasoning plus automatic
+			// task delegation — is Sol and Terra only.
+			{
+				id: "max",
+				label: "Max",
+				models: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+			},
+			{ id: "ultra", label: "Ultra", models: ["gpt-5.6-sol", "gpt-5.6-terra"] },
 		],
 	},
 	{
@@ -239,14 +339,12 @@ export const AGENT_EFFORT_SUPPORT: readonly AgentEffortSupport[] = [
 	{
 		presetId: "pi",
 		effortFlag: "--thinking",
-		efforts: [
-			{ id: "off", label: "Off" },
-			{ id: "minimal", label: "Minimal" },
-			{ id: "low", label: "Low" },
-			{ id: "medium", label: "Medium" },
-			{ id: "high", label: "High" },
-			{ id: "xhigh", label: "xHigh" },
-		],
+		efforts: [...PI_THINKING_LEVELS],
+	},
+	{
+		presetId: "omp",
+		effortFlag: "--thinking",
+		efforts: [...PI_THINKING_LEVELS],
 	},
 	{
 		presetId: "copilot",
@@ -260,6 +358,34 @@ export const AGENT_EFFORT_SUPPORT: readonly AgentEffortSupport[] = [
 	},
 ];
 
+/**
+ * Optional launch modes that change how an agent starts. An unset mode always
+ * delegates to the CLI default.
+ */
+export const AGENT_MODE_SUPPORT: readonly AgentModeSupport[] = [
+	{
+		presetId: "omp",
+		modes: [{ id: "plan", label: "Plan first", args: ["--plan-yolo"] }],
+	},
+];
+
+/**
+ * Existing Superset profiles can use Pi's preset/icon with an overridden OMP
+ * executable. Resolve capabilities from that executable so legacy Pi keeps its
+ * own launch surface while `omp` and absolute OMP paths get OMP controls.
+ */
+export function resolveAgentLaunchPresetId(
+	presetId: string,
+	command: string,
+): string {
+	const [commandToken = ""] = command.trim().split(/\s+/);
+	const commandParts = commandToken.split(/[\\/]/);
+	const executable = (
+		commandParts[commandParts.length - 1] ?? ""
+	).toLowerCase();
+	return executable === "omp" || executable === "omp.exe" ? "omp" : presetId;
+}
+
 export function getAgentModelSupport(
 	presetId: string,
 ): AgentModelSupport | undefined {
@@ -272,21 +398,66 @@ export function getAgentEffortSupport(
 	return AGENT_EFFORT_SUPPORT.find((entry) => entry.presetId === presetId);
 }
 
+export function getAgentModeSupport(
+	presetId: string,
+): AgentModeSupport | undefined {
+	return AGENT_MODE_SUPPORT.find((entry) => entry.presetId === presetId);
+}
+
+/**
+ * Efforts the given preset offers for `model` — the full curated list minus
+ * any option the selected model rejects. An unset model (or an id outside the
+ * curated catalog, which `buildAgentModelArgs` drops so the launch runs the
+ * agent's own default) keeps the full list.
+ */
+export function getAgentEfforts(
+	presetId: string,
+	model?: string,
+): AgentEffortOption[] {
+	const support = getAgentEffortSupport(presetId);
+	if (!support) return [];
+	const selected = getAgentModelSupport(presetId)?.models.some(
+		(option) => option.id === model,
+	)
+		? model
+		: undefined;
+	return support.efforts.filter(
+		(effort) => !effort.models || !selected || effort.models.includes(selected),
+	);
+}
+
 /**
  * Argv tokens that select `effort` for the given preset, e.g.
  * `["--effort", "high"]` (codex: `["-c", "model_reasoning_effort=high"]`).
- * Same degrade-to-default contract as `buildAgentModelArgs`: unknown presets
- * or effort ids outside the curated list return `[]`.
+ * Same degrade-to-default contract as `buildAgentModelArgs`: unknown presets,
+ * effort ids outside the curated list, and efforts the selected model rejects
+ * return `[]`.
  */
 export function buildAgentEffortArgs(
 	presetId: string,
 	effort: string | undefined,
+	model?: string,
 ): string[] {
 	if (!effort) return [];
 	const support = getAgentEffortSupport(presetId);
 	if (!support) return [];
-	if (!support.efforts.some((option) => option.id === effort)) return [];
+	const efforts = getAgentEfforts(presetId, model);
+	if (!efforts.some((option) => option.id === effort)) return [];
 	return [support.effortFlag, `${support.effortValuePrefix ?? ""}${effort}`];
+}
+
+/**
+ * Argv tokens that select a launch mode for the given preset. Unknown presets,
+ * unset modes, and stale mode ids degrade to the CLI default.
+ */
+export function buildAgentModeArgs(
+	presetId: string,
+	mode: string | undefined,
+): string[] {
+	if (!mode) return [];
+	const support = getAgentModeSupport(presetId);
+	const option = support?.modes.find((candidate) => candidate.id === mode);
+	return option ? [...option.args] : [];
 }
 
 /**

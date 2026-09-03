@@ -52,8 +52,18 @@ export interface CommentPaneData {
 	line?: number;
 }
 
+export interface PagePaneData {
+	slug: string;
+	pageId?: string;
+	title?: string;
+}
+
 export interface ChatV3PaneData {
 	sessionId: string | null;
+}
+
+export interface DesktopPaneData {
+	kind: "desktop";
 }
 
 export type PaneViewerData =
@@ -63,4 +73,6 @@ export type PaneViewerData =
 	| BrowserPaneData
 	| DevtoolsPaneData
 	| DiffPaneData
-	| CommentPaneData;
+	| CommentPaneData
+	| PagePaneData
+	| DesktopPaneData;

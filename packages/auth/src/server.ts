@@ -17,6 +17,7 @@ import { OrganizationInvitationEmail } from "@superset/email/emails/team/invitat
 import { MemberAddedEmail } from "@superset/email/emails/team/member-added";
 import { MemberRemovedEmail } from "@superset/email/emails/team/member-removed";
 import { canInvite, type OrganizationRole } from "@superset/shared/auth";
+import { ACTIVE_SUBSCRIPTION_STATUSES } from "@superset/shared/billing";
 import { getTrustedVercelPreviewOrigins } from "@superset/shared/vercel-preview-origins";
 import { Client } from "@upstash/qstash";
 import { betterAuth } from "better-auth";
@@ -32,7 +33,10 @@ import { and, asc, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type Stripe from "stripe";
 import { env } from "./env";
 import { acceptInvitationEndpoint } from "./lib/accept-invitation-endpoint";
+import { jwksAdapter } from "./lib/cached-jwks";
 import { generateMagicTokenForInvite } from "./lib/generate-magic-token";
+import { getActivationVariant } from "./lib/lifecycle";
+import { loadCustomSessionData } from "./lib/load-custom-session-data";
 import { invitationRateLimit } from "./lib/rate-limit";
 import { resend } from "./lib/resend";
 import {
@@ -40,7 +44,13 @@ import {
 	type SessionOrganizationContext,
 } from "./lib/resolve-session-organization-state";
 import { stripeClient } from "./stripe";
-import { formatPrice, getOrganizationOwners } from "./utils";
+import {
+	countBillableSeats,
+	formatPrice,
+	getOrganizationBillingRecipients,
+	getOrganizationOwners,
+} from "./utils";
+import { previewNextInvoice } from "./utils/invoice-preview";
 
 const qstash = new Client({ token: env.QSTASH_TOKEN });
 
@@ -154,6 +164,43 @@ export const auth = betterAuth({
 				});
 			}
 		}),
+		// Remember the switch on the user, not just on the session that made it.
+		// `sessions.active_organization_id` dies with its session, and the next
+		// session would fall back to the newest membership — which is how people
+		// ended up in an organization they never chose. Better-auth has no
+		// set-active hook, so the route is the choke point; every client reaches
+		// it through `organization.setActive`.
+		//
+		// `ctx.context.returned` rather than `newSession`: the dispatcher hands
+		// after-hooks a shallow copy of the context, so the `setNewSession` the
+		// endpoint called is not visible here. `returned` is the organization
+		// the route settled on, or null when the active organization is cleared.
+		after: createAuthMiddleware(async (ctx) => {
+			if (ctx.path !== "/organization/set-active") return;
+			const returned = ctx.context.returned;
+			if (returned instanceof APIError) return;
+
+			const organizationId =
+				returned && typeof returned === "object" && "id" in returned
+					? String(returned.id)
+					: null;
+			const userId = (await getSessionFromCtx(ctx))?.user?.id;
+			if (!userId) return;
+
+			// The switch itself has already been persisted and the cookie set;
+			// throwing here would report a failure for something that worked.
+			try {
+				await db
+					.update(authSchema.users)
+					.set({ lastActiveOrganizationId: organizationId })
+					.where(eq(authSchema.users.id, userId));
+			} catch (error) {
+				console.error(
+					`[organization/set-active] Failed to remember active organization for ${userId}:`,
+					error,
+				);
+			}
+		}),
 	},
 	advanced: {
 		crossSubDomainCookies: {
@@ -250,10 +297,9 @@ export const auth = betterAuth({
 							.where(eq(authSchema.sessions.userId, user.id));
 					}
 
-					// Lifecycle emails ship to every signup. The A/B (experiment
-					// 387868) was retired inconclusive: at ~143 signups/day the
-					// diluted intent-to-treat effect would need years to resolve.
-					// Kill switch for the nudges is the Resend automation toggle.
+					// The welcome email is unconditional in BOTH arms. Gating it is
+					// what invalidated experiment 387868: a6beb048b changed the control
+					// condition mid-flight and the run became unreadable.
 					try {
 						const { error } = await resend.emails.send({
 							from: "Superset <noreply@superset.sh>",
@@ -274,18 +320,35 @@ export const auth = betterAuth({
 						);
 					}
 
-					try {
-						const { error } = await resend.events.send({
-							event: "user.signed_up",
-							email: user.email,
-							payload: { userId: user.id, name: user.name },
-						});
-						if (error) throw new Error(error.message);
-					} catch (error) {
-						console.error(
-							`[lifecycle] Failed to emit signup event for ${user.id}:`,
-							error,
-						);
+					// Only drip enrolment is randomised. Nothing differs between arms
+					// until the first nudge (>=23h after signup), so "not activated at
+					// 22h" stays a pre-treatment covariate and the analysis can restrict
+					// to it without selection bias. Kill switch for the nudges is still
+					// the Resend automation toggle.
+					//
+					// CAUTION: withholding this event withholds it from EVERY consumer,
+					// not just the activation drip. Safe today because activation-drip
+					// is the only automation in sync-automations.ts triggering on
+					// `user.signed_up` — but that script is create-only and Resend can
+					// hold automations it never defined, so check the live account
+					// before trusting that. A second consumer means splitting enrolment
+					// first: emit `user.signed_up` unconditionally and gate an
+					// activation-only event instead, or the control arm silently drops
+					// out of that campaign too.
+					if ((await getActivationVariant(user.id)) === "test") {
+						try {
+							const { error } = await resend.events.send({
+								event: "user.signed_up",
+								email: user.email,
+								payload: { userId: user.id, name: user.name },
+							});
+							if (error) throw new Error(error.message);
+						} catch (error) {
+							console.error(
+								`[lifecycle] Failed to emit signup event for ${user.id}:`,
+								error,
+							);
+						}
 					}
 				},
 			},
@@ -304,6 +367,7 @@ export const auth = betterAuth({
 			jwks: {
 				keyPairConfig: { alg: "RS256" },
 			},
+			adapter: jwksAdapter(),
 			jwt: {
 				issuer: env.NEXT_PUBLIC_API_URL,
 				audience: env.NEXT_PUBLIC_API_URL,
@@ -637,6 +701,9 @@ export const auth = betterAuth({
 
 					if (subscription) return;
 
+					// Not countBillableSeats: the free-plan limit is about how many
+					// people are in the organization, not how many seats we bill,
+					// so a member pending deletion still occupies the one slot.
 					const memberCount = await db
 						.select({ count: count() })
 						.from(members)
@@ -710,12 +777,10 @@ export const auth = betterAuth({
 					if (!subscription?.stripeSubscriptionId) return;
 					if (subscription.plan === "enterprise") return;
 
-					const memberCount = await db
-						.select({ count: count() })
-						.from(members)
-						.where(eq(members.organizationId, organization.id));
-
-					const quantity = memberCount[0]?.count ?? 1;
+					const quantity = Math.max(
+						1,
+						await countBillableSeats(organization.id),
+					);
 
 					const stripeSub = await stripeClient.subscriptions.retrieve(
 						subscription.stripeSubscriptionId,
@@ -732,27 +797,53 @@ export const auth = betterAuth({
 						);
 					}
 
-					const owners = await getOrganizationOwners(organization.id);
+					const recipients = await getOrganizationBillingRecipients(
+						organization.id,
+					);
 					const pricePerSeat = stripeSub.items.data[0]?.price?.unit_amount ?? 0;
 					const currency = stripeSub.items.data[0]?.price?.currency ?? "usd";
 					const newMonthlyTotal = formatPrice(
 						pricePerSeat * quantity,
 						currency,
 					);
+					// unit_amount is per billing period: on an annual price the total
+					// above is yearly, and calling it monthly understates it 12x.
+					const billingInterval =
+						stripeSub.items.data[0]?.price?.recurring?.interval === "year"
+							? ("yearly" as const)
+							: ("monthly" as const);
+
+					// The base total above is not what gets charged: the mid-cycle
+					// catch-up rides on the same invoice. Quote both or quote neither.
+					const customerId =
+						typeof stripeSub.customer === "string"
+							? stripeSub.customer
+							: stripeSub.customer.id;
+					const preview = itemId
+						? await previewNextInvoice(
+								customerId,
+								subscription.stripeSubscriptionId,
+								itemId,
+								"charge",
+							)
+						: null;
 
 					await resend.batch.send(
-						owners.map((owner) => ({
+						recipients.map((recipient) => ({
 							from: "Superset <noreply@superset.sh>",
-							to: owner.email,
+							to: recipient.email,
 							subject: `Billing update: New member added to ${organization.name}`,
 							react: MemberAddedBillingEmail({
-								ownerName: owner.name,
+								recipientName: recipient.name,
+								prorationAmount: preview?.prorationAmount ?? null,
+								nextInvoiceTotal: preview?.nextInvoiceTotal ?? null,
 								organizationName: organization.name,
 								newMemberName: user.name ?? "New member",
 								newMemberEmail: user.email,
 								addedByName: "A team admin",
 								newSeatCount: quantity,
 								newMonthlyTotal,
+								billingInterval,
 							}),
 						})),
 					);
@@ -799,12 +890,10 @@ export const auth = betterAuth({
 					if (!subscription?.stripeSubscriptionId) return;
 					if (subscription.plan === "enterprise") return;
 
-					const memberCount = await db
-						.select({ count: count() })
-						.from(members)
-						.where(eq(members.organizationId, organization.id));
-
-					const quantity = Math.max(1, memberCount[0]?.count ?? 1);
+					const quantity = Math.max(
+						1,
+						await countBillableSeats(organization.id),
+					);
 
 					const stripeSub = await stripeClient.subscriptions.retrieve(
 						subscription.stripeSubscriptionId,
@@ -821,27 +910,51 @@ export const auth = betterAuth({
 						);
 					}
 
-					const owners = await getOrganizationOwners(organization.id);
+					const recipients = await getOrganizationBillingRecipients(
+						organization.id,
+					);
 					const pricePerSeat = stripeSub.items.data[0]?.price?.unit_amount ?? 0;
 					const currency = stripeSub.items.data[0]?.price?.currency ?? "usd";
 					const newMonthlyTotal = formatPrice(
 						pricePerSeat * quantity,
 						currency,
 					);
+					// unit_amount is per billing period: on an annual price the total
+					// above is yearly, and calling it monthly understates it 12x.
+					const billingInterval =
+						stripeSub.items.data[0]?.price?.recurring?.interval === "year"
+							? ("yearly" as const)
+							: ("monthly" as const);
+
+					const customerId =
+						typeof stripeSub.customer === "string"
+							? stripeSub.customer
+							: stripeSub.customer.id;
+					const preview = itemId
+						? await previewNextInvoice(
+								customerId,
+								subscription.stripeSubscriptionId,
+								itemId,
+								"credit",
+							)
+						: null;
 
 					await resend.batch.send(
-						owners.map((owner) => ({
+						recipients.map((recipient) => ({
 							from: "Superset <noreply@superset.sh>",
-							to: owner.email,
+							to: recipient.email,
 							subject: `Billing update: Member removed from ${organization.name}`,
 							react: MemberRemovedBillingEmail({
-								ownerName: owner.name,
+								recipientName: recipient.name,
+								prorationAmount: preview?.prorationAmount ?? null,
+								nextInvoiceTotal: preview?.nextInvoiceTotal ?? null,
 								organizationName: organization.name,
 								removedMemberName: user.name ?? "Former member",
 								removedMemberEmail: user.email,
 								removedByName: "A team admin",
 								newSeatCount: quantity,
 								newMonthlyTotal,
+								billingInterval,
 							}),
 						})),
 					);
@@ -871,40 +984,57 @@ export const auth = betterAuth({
 		customSession(
 			async ({ user, session: baseSession }) => {
 				const session = baseSession as typeof sessions.$inferSelect;
+				const userId = session.userId ?? user.id;
+
+				// Memberships, the active organization's plan and the user's own
+				// flags in one statement. This runs on every authenticated request
+				// in the product, so each extra round trip here is a region-crossing
+				// hop the whole fleet pays for.
+				const data = await loadCustomSessionData({
+					userId,
+					activeOrganizationId: session.activeOrganizationId ?? null,
+				});
+
 				const { activeOrganizationId, allMemberships, membership } =
-					await resolveSessionOrganizationState({
-						userId: session.userId ?? user.id,
-						session,
-					});
+					await resolveSessionOrganizationState(
+						{ userId, session },
+						{
+							listMemberships: async () => data.memberships,
+							getLastActiveOrganization: async () =>
+								data.lastActiveOrganizationId,
+						},
+					);
 
 				const organizationIds = [
 					...new Set(allMemberships.map((m) => m.organizationId)),
 				];
 
+				// Same statuses the rest of the app gates on — this is the value
+				// the paywall falls back to when the activePlan query can't be
+				// reached, so an "active"-only read here would strand trialing
+				// and past_due organizations on a cold start.
 				let plan: string | null = null;
-				if (activeOrganizationId) {
+				if (activeOrganizationId === data.planOrganizationId) {
+					plan = data.plan;
+				} else if (activeOrganizationId) {
+					// A concurrent request moved the session's active organization
+					// after the query above ran, so the plan it found belongs to the
+					// wrong one. Rare enough to be worth a second read rather than
+					// serialising the common path behind it.
 					const subscription = await db.query.subscriptions.findFirst({
 						where: and(
 							eq(subscriptions.referenceId, activeOrganizationId),
-							eq(subscriptions.status, "active"),
+							inArray(subscriptions.status, ACTIVE_SUBSCRIPTION_STATUSES),
 						),
 					});
 					plan = subscription?.plan ?? null;
 				}
 
-				// additionalFields declares onboardedAt for client typing, but the
-				// drizzle adapter doesn't surface it on the passed-in user — read it
-				// explicitly so the onboarding gate is deterministic.
-				const userRow = await db.query.users.findFirst({
-					where: eq(authSchema.users.id, user.id),
-					columns: { onboardedAt: true, deletionRequestedAt: true },
-				});
-
 				return {
 					user: {
 						...user,
-						onboardedAt: userRow?.onboardedAt ?? null,
-						deletionRequestedAt: userRow?.deletionRequestedAt ?? null,
+						onboardedAt: data.onboardedAt,
+						deletionRequestedAt: data.deletionRequestedAt,
 					},
 					session: {
 						...session,
@@ -1076,7 +1206,9 @@ export const auth = betterAuth({
 
 					if (!org?.stripeCustomerId) return;
 
-					const owners = await getOrganizationOwners(subscription.referenceId);
+					const recipients = await getOrganizationBillingRecipients(
+						subscription.referenceId,
+					);
 					const accessEndsAt = subscription.periodEnd ?? new Date();
 
 					const portalSession =
@@ -1086,16 +1218,17 @@ export const auth = betterAuth({
 						});
 
 					await resend.batch.send(
-						owners.map((owner) => ({
+						recipients.map((recipient) => ({
 							from: "Superset <noreply@superset.sh>",
-							to: owner.email,
+							to: recipient.email,
 							subject: `Your ${subscription.plan} subscription has been cancelled`,
 							react: SubscriptionCancelledEmail({
-								ownerName: owner.name,
+								recipientName: recipient.name,
 								organizationName: org.name,
 								planName: subscription.plan,
 								accessEndsAt,
-								billingPortalUrl: portalSession.url,
+								billingPortalUrl:
+									recipient.role === "owner" ? portalSession.url : undefined,
 							}),
 						})),
 					);
@@ -1144,7 +1277,7 @@ export const auth = betterAuth({
 							where: eq(subscriptions.referenceId, org.id),
 						});
 
-						const owners = await getOrganizationOwners(org.id);
+						const recipients = await getOrganizationBillingRecipients(org.id);
 						const amount = formatPrice(invoice.amount_due, invoice.currency);
 
 						const portalSession =
@@ -1154,16 +1287,17 @@ export const auth = betterAuth({
 							});
 
 						await resend.batch.send(
-							owners.map((owner) => ({
+							recipients.map((recipient) => ({
 								from: "Superset <noreply@superset.sh>",
-								to: owner.email,
+								to: recipient.email,
 								subject: `Payment failed for ${org.name}`,
 								react: PaymentFailedEmail({
-									ownerName: owner.name,
+									recipientName: recipient.name,
 									organizationName: org.name,
 									planName: subscription?.plan ?? "Pro",
 									amount,
-									billingPortalUrl: portalSession.url,
+									billingPortalUrl:
+										recipient.role === "owner" ? portalSession.url : undefined,
 								}),
 							})),
 						);

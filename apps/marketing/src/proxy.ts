@@ -1,77 +1,48 @@
-import { type NextRequest, NextResponse } from "next/server";
+import { isSupportedLocale } from "@superset/i18n";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
-const MD_TWIN_PATTERN = /^\/(blog|compare|changelog)\/([^/]+)\.md$/;
+/**
+ * Locale routing. The whole route tree lives under app/[lang], but English
+ * keeps the bare URLs it has always had — every inbound link and its
+ * accumulated search equity stays valid:
+ *
+ * - /pricing        -> rewritten internally to /en/pricing (URL bar unchanged)
+ * - /ja/pricing     -> passes through, renders Japanese
+ * - /en/pricing     -> 308 to /pricing, so English has exactly one URL
+ *
+ * Deliberately no Accept-Language redirect: locale auto-redirects hide the
+ * localized pages from crawlers (which send en or nothing) and break shared
+ * links. Discovery is hreflang, the sitemap, and the visible switcher.
+ */
+export function proxy(request: NextRequest) {
+	const { pathname } = request.nextUrl;
+	const [, first = "", ...rest] = pathname.split("/");
 
-// Top-level category guide pages (content/category/*.mdx). Proxy runs on the
-// edge without fs access, so the slugs are duplicated here; keep in sync.
-const CATEGORY_SLUGS = ["parallel-coding-agents", "agent-orchestration"];
-
-function acceptsMarkdown(request: NextRequest): boolean {
-	const accept = request.headers.get("accept") ?? "";
-	return accept.includes("text/markdown");
-}
-
-function rewriteTo(request: NextRequest, pathname: string): NextResponse {
+	if (first === "en") {
+		const url = request.nextUrl.clone();
+		url.pathname = `/${rest.join("/")}`;
+		return NextResponse.redirect(url, 308);
+	}
+	if (isSupportedLocale(first)) {
+		return;
+	}
 	const url = request.nextUrl.clone();
-	url.pathname = pathname;
-	url.search = "";
-	const response = NextResponse.rewrite(url);
-	response.headers.set("Vary", "Accept");
-	return response;
-}
-
-export default function proxy(request: NextRequest) {
-	const { pathname, searchParams } = request.nextUrl;
-
-	if (pathname === "/") {
-		// Machine-readable homepage view for agents.
-		if (searchParams.get("mode") === "agent") {
-			return rewriteTo(request, "/agents.md");
-		}
-		// Markdown content negotiation (acceptmarkdown.com).
-		if (acceptsMarkdown(request)) {
-			return rewriteTo(request, "/index.md");
-		}
-		return NextResponse.next();
-	}
-
-	// Category guide pages: /parallel-coding-agents(.md) -> markdown twin.
-	for (const slug of CATEGORY_SLUGS) {
-		if (pathname === `/${slug}.md`) {
-			return rewriteTo(request, `/md/category/${slug}`);
-		}
-		if (pathname === `/${slug}` && acceptsMarkdown(request)) {
-			return rewriteTo(request, `/md/category/${slug}`);
-		}
-	}
-
-	// .md twins for content pages: /blog/foo.md -> markdown source.
-	const twinMatch = pathname.match(MD_TWIN_PATTERN);
-	if (twinMatch) {
-		return rewriteTo(request, `/md/${twinMatch[1]}/${twinMatch[2]}`);
-	}
-
-	// Accept negotiation on content pages that have a markdown twin. Segments
-	// with an extension (llms.txt, feed.xml) are files, not pages, so skip them.
-	if (
-		/^\/(blog|compare|changelog)\/[^/.]+$/.test(pathname) &&
-		acceptsMarkdown(request)
-	) {
-		return rewriteTo(request, `/md${pathname}`);
-	}
-
-	return NextResponse.next();
+	url.pathname = `/en${pathname}`;
+	return NextResponse.rewrite(url);
 }
 
 export const config = {
-	matcher: [
-		"/",
-		"/blog/:slug",
-		"/compare/:slug",
-		"/changelog/:slug",
-		"/parallel-coding-agents",
-		"/parallel-coding-agents.md",
-		"/agent-orchestration",
-		"/agent-orchestration.md",
-	],
+	// Skip Next internals, API routes, the two same-origin analytics proxies,
+	// and anything with a file extension (feeds, llms.txt, images, favicon) —
+	// those live at the root on purpose.
+	//
+	// `ingest` (PostHog, via next.config rewrites) and `monitoring` (Sentry's
+	// tunnelRoute) are extensionless, so without naming them here they get
+	// rewritten to /en/... and 404. That is silent: posthog-js still loads,
+	// because /ingest/static/*.js has a dot and slips through this matcher,
+	// and then every capture request dies. It cost four days of marketing
+	// analytics and Sentry reporting in 2026-08. apps/web and apps/api
+	// exclude both for the same reason.
+	matcher: ["/((?!_next|api|ingest|monitoring|.*\\..*).*)"],
 };

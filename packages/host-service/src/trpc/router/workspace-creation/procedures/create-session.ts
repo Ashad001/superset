@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { basename } from "node:path";
 import { generateFriendlyBranchName } from "@superset/shared/workspace-launch";
+import { workspaceTagsInputSchema } from "@superset/shared/workspace-tags";
 import { TRPCError } from "@trpc/server";
 import { isNull } from "drizzle-orm";
 import { z } from "zod";
@@ -14,7 +15,7 @@ import {
 	updateLocalWorkspace,
 } from "../../../../workspaces/local-workspace-store";
 import { protectedProcedure } from "../../../index";
-import { validateAgentLaunchEffort } from "../../agents";
+import { validateAgentLaunchOptions } from "../../agents";
 import { initEmptyRepo } from "../../project/utils/resolve-repo";
 import { startCommandTerminal } from "../shared/command-terminal";
 import {
@@ -41,6 +42,10 @@ const createSessionInputSchema = z.object({
 	agents: z.array(agentLaunchSchema).optional(),
 	command: z.string().min(1).optional(),
 	namingPrompt: z.string().min(1).optional(),
+	// Sessions render in a flat lane (no per-project folders), but the tags
+	// are stored so listings and future consumers see them — automation
+	// dispatch sends its tag set for sessions and worktrees alike.
+	tags: workspaceTagsInputSchema.optional(),
 });
 
 /** Names already claimed: session dirs on disk plus session rows in the DB.
@@ -68,7 +73,7 @@ export const createSession = protectedProcedure
 	.input(createSessionInputSchema)
 	.mutation(async ({ ctx, input }) => {
 		for (const launch of input.agents ?? []) {
-			validateAgentLaunchEffort(ctx.db, launch);
+			validateAgentLaunchOptions(ctx.db, launch);
 		}
 
 		// Idempotency: a retry carrying the same optimistic id must return the
@@ -145,6 +150,7 @@ export const createSession = protectedProcedure
 				branch: "main",
 				name: typedName || folderName,
 				type: "session",
+				tags: input.tags,
 			});
 		} catch (err) {
 			// The folder was allocated this call and holds only the scaffold —

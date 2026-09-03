@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { env } from "renderer/env.renderer";
 import { useKnownHosts } from "renderer/hooks/known-hosts/useKnownHosts";
 import { useRelayUrl } from "renderer/hooks/useRelayUrl";
-import { authClient } from "renderer/lib/auth-client";
 import { getHostEventBus } from "renderer/lib/host-event-bus";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
@@ -14,6 +13,7 @@ import {
 	getHostProjectsQueryKey,
 	type HostProjectItem,
 	type HostProjectRow,
+	type HostProjectRowsResult,
 	loadHostProjectsSnapshot,
 	mergeHostProjects,
 	normalizeHostProjectRow,
@@ -24,12 +24,15 @@ import {
 export type {
 	HostProjectItem,
 	HostProjectRow,
+	HostProjectRowsResult,
 } from "./useHostProjects.utils";
 
 const PROJECTS_FALLBACK_REFETCH_INTERVAL_MS = 30_000;
 
 export interface UseHostProjectsResult {
 	projects: HostProjectItem[];
+	/** Unmerged per-host rows for compatibility adapters. */
+	hostResults: HostProjectRowsResult[];
 	/**
 	 * True once every host answered, failed, or served a snapshot. Gates
 	 * empty states only — existing rows always render (cache-first rule).
@@ -45,12 +48,15 @@ export interface UseHostProjectsResult {
  */
 export function useHostProjects(): UseHostProjectsResult {
 	const queryClient = useQueryClient();
-	const { activeHostUrl, machineId } = useLocalHostService();
+	const { activeHostUrl, machineId, activeOrganizationId } =
+		useLocalHostService();
 	const relayUrl = useRelayUrl();
-	const { data: session } = authClient.useSession();
+	// Per-window org, not the shared session — otherwise every window lists the
+	// projects of whichever org the session holds, so a second window on a
+	// different org shows the first org's projects (or none at all).
 	const fallbackOrganizationId = env.SKIP_ENV_VALIDATION
 		? MOCK_ORG_ID
-		: (session?.session?.activeOrganizationId ?? null);
+		: (activeOrganizationId ?? null);
 
 	const { hosts, settled: knownHostsSettled } = useKnownHosts();
 
@@ -187,20 +193,22 @@ export function useHostProjects(): UseHostProjectsResult {
 		};
 	}, [targets, queryClient]);
 
-	const projects = useMemo(
+	const hostResults = useMemo<HostProjectRowsResult[]>(
 		() =>
-			mergeHostProjects({
-				hostResults: targets.map((target, index) => {
-					const query = queries[index];
-					const live = query?.data;
-					return {
-						target,
-						rows: live ?? snapshots.get(target.machineId),
-						reachable: live !== undefined && !query?.isError,
-					};
-				}),
+			targets.map((target, index) => {
+				const query = queries[index];
+				const live = query?.data;
+				return {
+					target,
+					rows: live ?? snapshots.get(target.machineId),
+					reachable: live !== undefined && !query?.isError,
+				};
 			}),
 		[targets, queries, snapshots],
+	);
+	const projects = useMemo(
+		() => mergeHostProjects({ hostResults }),
+		[hostResults],
 	);
 
 	// Never vacuously ready: zero targets means host discovery hasn't run
@@ -217,5 +225,5 @@ export function useHostProjects(): UseHostProjectsResult {
 				snapshots.has(targets[index]?.machineId ?? ""),
 		);
 
-	return { projects, isReady };
+	return { projects, hostResults, isReady };
 }

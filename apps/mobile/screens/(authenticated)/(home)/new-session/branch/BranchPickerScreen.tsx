@@ -1,16 +1,23 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { Trans, useLingui } from "@lingui/react/macro";
 import { useQuery } from "@tanstack/react-query";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
+import { useOrgHostsQuery } from "@/hooks/useOrgHosts";
 import { useTheme } from "@/hooks/useTheme";
 import { useSession } from "@/lib/auth/client";
-import { getHostServiceClientByUrl } from "@/lib/host-service/client";
+import {
+	getHostServiceClientByUrl,
+	hostServiceUrl,
+} from "@/lib/host-service/client";
+import { posthog } from "@/lib/posthog";
 import { apiClient } from "@/lib/trpc/client";
-import { useNewChatTargets } from "@/screens/(authenticated)/(home)/home/components/NewChatWidget/hooks/useNewChatTargets";
+import { CLOUD_TARGET_ID } from "@/screens/(authenticated)/(home)/home/components/NewChatWidget/hooks/useNewChatTargets";
 import { useNewSessionPreferencesStore } from "@/screens/(authenticated)/(home)/home/components/NewChatWidget/stores/newSessionPreferencesStore";
 
 function BranchRow({
@@ -24,7 +31,11 @@ function BranchRow({
 }) {
 	const theme = useTheme();
 	return (
-		<Pressable className="flex-row items-center gap-2 py-2.5" onPress={onPress}>
+		<Pressable
+			className="flex-row items-center gap-2 py-2.5"
+			onPress={onPress}
+			ph-label="new-session-branch-row"
+		>
 			<Text
 				className="flex-1 text-sm"
 				numberOfLines={1}
@@ -40,21 +51,32 @@ function BranchRow({
 }
 
 export function BranchPickerScreen() {
+	const { t } = useLingui();
 	const router = useRouter();
 	const theme = useTheme();
+	const insets = useSafeAreaInsets();
 	const [query, setQuery] = useState("");
-	const { targets, defaultTarget } = useNewChatTargets();
-	const targetKey = useNewSessionPreferencesStore((state) => state.targetKey);
+	const params = useLocalSearchParams<{
+		projectId?: string;
+		machineId?: string;
+	}>();
 	const baseBranch = useNewSessionPreferencesStore((state) => state.baseBranch);
 	const setBaseBranch = useNewSessionPreferencesStore(
 		(state) => state.setBaseBranch,
 	);
 
-	const selectedTarget =
-		targets.find((target) => target.key === targetKey) ?? defaultTarget;
-	const isCloud = selectedTarget?.kind === "cloud";
-	const hostUrl = selectedTarget?.hostUrl ?? null;
-	const projectId = selectedTarget?.projectId ?? null;
+	const isCloud = params.machineId === CLOUD_TARGET_ID;
+	const hostsQuery = useOrgHostsQuery();
+	const host =
+		!isCloud && params.machineId
+			? (hostsQuery.data?.find(
+					(entry) => entry.machineId === params.machineId,
+				) ?? null)
+			: null;
+	const hostUrl = host
+		? hostServiceUrl(host.organizationId, host.machineId)
+		: null;
+	const projectId = params.projectId || null;
 	const { data: session } = useSession();
 	const organizationId = session?.session?.activeOrganizationId ?? null;
 
@@ -81,7 +103,6 @@ export function BranchPickerScreen() {
 				if (!organizationId) return null;
 				return apiClient.cloudWorkspace.listBranches.query({
 					organizationId,
-					projectId,
 					query: trimmedQuery || undefined,
 				});
 			}
@@ -97,6 +118,7 @@ export function BranchPickerScreen() {
 		},
 	});
 
+	const resolvingHost = !isCloud && !host && hostsQuery.isPending;
 	const defaultBranch = data?.defaultBranch ?? null;
 	const branches = useMemo(
 		() => (data?.items ?? []).filter((branch) => branch.name !== defaultBranch),
@@ -105,6 +127,9 @@ export function BranchPickerScreen() {
 
 	const selectAndClose = (branch: string | null) => {
 		setBaseBranch(branch);
+		posthog.capture("new_session_branch_selected", {
+			is_default_branch: branch === null || branch === defaultBranch,
+		});
 		router.back();
 	};
 
@@ -129,14 +154,20 @@ export function BranchPickerScreen() {
 						autoCorrect={false}
 						className="rounded-full pl-9"
 						onChangeText={setQuery}
-						placeholder="Branches..."
+						placeholder={t({
+							id: "mobile.branchPicker.placeholder",
+							message: "Branches...",
+						})}
 						value={query}
 					/>
 				</View>
 			</View>
 			<ScrollView
 				className="bg-background"
-				contentContainerStyle={{ paddingBottom: 24, paddingHorizontal: 24 }}
+				contentContainerStyle={{
+					paddingBottom: insets.bottom + 8,
+					paddingHorizontal: 24,
+				}}
 				keyboardShouldPersistTaps="handled"
 			>
 				{defaultBranch ? (
@@ -145,7 +176,7 @@ export function BranchPickerScreen() {
 							className="pb-1 pt-3 text-sm font-semibold"
 							style={{ color: theme.mutedForeground }}
 						>
-							Default
+							<Trans id="mobile.branchPicker.default">Default</Trans>
 						</Text>
 						<BranchRow
 							name={defaultBranch}
@@ -159,7 +190,9 @@ export function BranchPickerScreen() {
 						className="pb-1 pt-3 text-sm font-semibold"
 						style={{ color: theme.mutedForeground }}
 					>
-						{trimmedQuery ? "Branches" : "Recents"}
+						{trimmedQuery
+							? t({ id: "mobile.branchPicker.branches", message: "Branches" })
+							: t({ id: "mobile.branchPicker.recents", message: "Recents" })}
 					</Text>
 				) : null}
 				{branches.map((branch) => (
@@ -170,17 +203,20 @@ export function BranchPickerScreen() {
 						onPress={() => selectAndClose(branch.name)}
 					/>
 				))}
-				{isLoading && !data ? (
+				{(isLoading || resolvingHost) && !data ? (
 					<View className="items-center py-6">
 						<Spinner size="small" />
 					</View>
 				) : null}
-				{!isLoading && !defaultBranch && branches.length === 0 ? (
+				{!isLoading &&
+				!resolvingHost &&
+				!defaultBranch &&
+				branches.length === 0 ? (
 					<Text
 						className="py-6 text-center text-sm"
 						style={{ color: theme.mutedForeground }}
 					>
-						No branches found
+						<Trans id="mobile.branchPicker.empty">No branches found</Trans>
 					</Text>
 				) : null}
 			</ScrollView>

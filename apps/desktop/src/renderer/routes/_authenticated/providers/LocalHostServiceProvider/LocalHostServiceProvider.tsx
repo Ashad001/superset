@@ -1,3 +1,4 @@
+import { reconnectEventBusIfDown } from "@superset/workspace-client";
 import {
 	createContext,
 	type ReactNode,
@@ -15,6 +16,7 @@ import {
 	setHostServiceSecret,
 } from "renderer/lib/host-service-auth";
 import type { HostServiceAvailabilityStatus } from "renderer/lib/host-service-unavailable";
+import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { MOCK_ORG_ID } from "shared/constants";
 
 interface LocalHostServiceContextValue {
@@ -41,8 +43,10 @@ export function LocalHostServiceProvider({
 	children: ReactNode;
 }) {
 	const utils = electronTrpc.useUtils();
-	const { data: session } = authClient.useSession();
 	const { data: activeOrganization } = authClient.useActiveOrganization();
+	// Session still owns which orgs you belong to and the auth token; only the
+	// ACTIVE org is per-window.
+	const { data: session } = authClient.useSession();
 	const authToken = useAuthToken();
 	const { mutateAsync: persistOrganizationIds } =
 		electronTrpc.auth.persistOrganizationIds.useMutation({
@@ -56,9 +60,16 @@ export function LocalHostServiceProvider({
 			},
 		});
 
+	// Per-window org, not the shared session: each window runs its host service
+	// against the org THAT window is showing. Reading the session here would
+	// point every window at whichever org the session happened to hold, so a
+	// second window on a different org showed the first org's projects.
+	// This provider is mounted inside CollectionsProvider, which owns the
+	// per-window org.
+	const { activeOrganizationId: windowOrganizationId } = useCollections();
 	const activeOrganizationId = env.SKIP_ENV_VALIDATION
 		? MOCK_ORG_ID
-		: (session?.session?.activeOrganizationId ?? null);
+		: (windowOrganizationId ?? null);
 	const organizationIds = env.SKIP_ENV_VALIDATION
 		? MOCK_ORGANIZATION_IDS
 		: session?.session?.organizationIds;
@@ -176,6 +187,18 @@ export function LocalHostServiceProvider({
 			},
 		},
 	);
+
+	// Fires on the null → connection edge after a restart (during downtime
+	// getConnection reports null, and react-query's structural sharing keeps an
+	// unchanged connection referentially stable). The event bus for this URL is
+	// on its own backoff and its next scheduled dial is seconds out — without a
+	// nudge the workspace sits under "Host unreachable" after the service is
+	// back. The secret is already in place: the context memo below stores it
+	// during the same render, before any effect runs.
+	useEffect(() => {
+		if (!activeConnection?.port) return;
+		reconnectEventBusIfDown(`http://127.0.0.1:${activeConnection.port}`);
+	}, [activeConnection]);
 
 	const waitForHostReady = useCallback(
 		async (timeoutMs = 20_000): Promise<string | null> => {

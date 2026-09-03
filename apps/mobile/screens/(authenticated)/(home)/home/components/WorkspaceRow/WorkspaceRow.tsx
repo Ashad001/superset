@@ -1,7 +1,8 @@
+import { useLingui } from "@lingui/react/macro";
 import type { SelectGithubPullRequest } from "@superset/db/schema";
 import { useRouter } from "expo-router";
-import { FolderGit2, Plus } from "lucide-react-native";
-import { ActivityIndicator, Pressable, View } from "react-native";
+import { FolderGit2 } from "lucide-react-native";
+import { Pressable, View } from "react-native";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
@@ -15,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { AgentMark } from "@/screens/(authenticated)/(home)/new-session/agent";
 import { AsciiSpinner } from "@/screens/(authenticated)/components/AsciiSpinner";
 import { PingDot } from "@/screens/(authenticated)/components/PingDot";
+import { usePinnedWorkspacesStore } from "@/screens/(authenticated)/stores/pinnedWorkspacesStore";
 import {
 	PULL_REQUEST_STATUS,
 	pullRequestStatus,
@@ -24,7 +26,6 @@ import type {
 	TerminalRowData,
 } from "../../hooks/useHostTerminals";
 import type { DiffStats } from "../../hooks/useVisibleDiffStats";
-import { useChatTargetStore } from "../../stores/chatTargetStore";
 import { WorkspaceRowMenu } from "./components/WorkspaceRowMenu";
 import { useWorkspaceRowActions } from "./hooks/useWorkspaceRowActions";
 
@@ -50,26 +51,27 @@ export function WorkspaceRow({
 	/** Set for a cloud workspace; drives the row's pending/failed treatment. */
 	cloudStatus?: CloudWorkspaceStatus;
 }) {
+	const { t } = useLingui();
 	const router = useRouter();
 	const theme = useTheme();
 	const prIcon = pullRequest
 		? PULL_REQUEST_STATUS[pullRequestStatus(pullRequest)]
 		: null;
-	const setTarget = useChatTargetStore((state) => state.setTarget);
-	const targeted = useChatTargetStore(
-		(state) => state.target?.workspaceId === workspace.id,
-	);
-	const canChat =
-		workspace.hostReachable &&
-		workspace.worktreeExists !== false &&
-		(cloudStatus === undefined || cloudStatus === "ready");
 	const {
-		isDeleting,
 		renameWorkspace,
 		deleteWorkspace,
 		copyId,
 		shareWorkspace,
-	} = useWorkspaceRowActions(workspace, cache, cloudStatus);
+		isUnread,
+		toggleUnread,
+	} = useWorkspaceRowActions(workspace, cache, sessions, cloudStatus);
+	// A manual mark reads as `review` — desktop's rollup ranks it lowest, so
+	// any live status the sessions are reporting keeps the slot.
+	const rowAttention = attention ?? (isUnread ? "review" : null);
+	const pinned = usePinnedWorkspacesStore(
+		(state) => workspace.id in state.pinnedAt,
+	);
+	const togglePin = usePinnedWorkspacesStore((state) => state.togglePin);
 
 	return (
 		<WorkspaceRowMenu
@@ -83,6 +85,10 @@ export function WorkspaceRow({
 					? workspace.type !== "main"
 					: cloudStatus !== "provisioning"
 			}
+			isUnread={isUnread}
+			onToggleUnread={toggleUnread}
+			pinned={pinned}
+			onTogglePin={() => togglePin(workspace.id)}
 			onRename={() => void renameWorkspace()}
 			onDelete={deleteWorkspace}
 			onCopyId={copyId}
@@ -91,25 +97,16 @@ export function WorkspaceRow({
 			{/* Default press behavior on purpose: the system context-menu lift
 			    owns the hold animation, and custom press feedback fights it. */}
 			<Pressable
-				className={cn(
-					"flex-row items-center gap-3 rounded-xl py-2 pl-10 pr-3",
-					targeted ? "bg-foreground/5" : "bg-background",
-					isDeleting && "opacity-40",
-				)}
-				disabled={isDeleting}
+				className="bg-background flex-row items-center gap-3 rounded-xl py-2 pl-10 pr-3"
 				onPress={() =>
 					router.push(`/(authenticated)/workspace/${workspace.id}`)
 				}
+				ph-label="workspace-row"
 			>
 				{/* Desktop WorkspaceIcon semantics: working replaces the icon with
 				    the braille spinner; other statuses overlay a corner ping on the
-				    base icon (PR state when one exists, else the workspace mark).
-				    A delete in flight takes the slot over everything else. */}
-				{isDeleting ? (
-					<View className="size-6 items-center justify-center">
-						<ActivityIndicator size="small" color={theme.mutedForeground} />
-					</View>
-				) : attention === "working" || cloudStatus === "provisioning" ? (
+				    base icon (PR state when one exists, else the workspace mark). */}
+				{rowAttention === "working" || cloudStatus === "provisioning" ? (
 					<View className="size-6 items-center justify-center">
 						<AsciiSpinner />
 					</View>
@@ -117,7 +114,11 @@ export function WorkspaceRow({
 					<View className="size-6 items-center justify-center">
 						{prIcon && pullRequest ? (
 							<Button
-								accessibilityLabel={`Pull request #${pullRequest.prNumber}`}
+								accessibilityLabel={t({
+									id: "mobile.workspaceRow.pullRequestLabel",
+									message: `Pull request #${pullRequest.prNumber}`,
+								})}
+								ph-label="workspace-row-pull-request"
 								variant="ghost"
 								size="icon"
 								className="size-6"
@@ -141,15 +142,15 @@ export function WorkspaceRow({
 								strokeWidth={1.75}
 							/>
 						)}
-						{attention === "permission" ? (
+						{rowAttention === "permission" ? (
 							<View className="absolute -right-0.5 -top-0.5">
 								<PingDot color="#eab308" size={7} />
 							</View>
-						) : attention === "failed" || cloudStatus === "failed" ? (
+						) : rowAttention === "failed" || cloudStatus === "failed" ? (
 							<View className="absolute -right-0.5 -top-0.5">
 								<PingDot color="#ef4444" size={7} />
 							</View>
-						) : attention === "review" ? (
+						) : rowAttention === "review" ? (
 							<View className="bg-green-500 absolute -right-0.5 -top-0.5 size-2 rounded-full" />
 						) : null}
 					</View>
@@ -208,22 +209,6 @@ export function WorkspaceRow({
 						) : null}
 					</View>
 				) : null}
-				<Button
-					accessibilityLabel={`New agent in ${workspace.name}`}
-					variant="ghost"
-					size="icon"
-					disabled={!canChat || isDeleting}
-					onPress={() =>
-						setTarget({
-							workspaceId: workspace.id,
-							workspaceName: workspace.name,
-							branch: workspace.branch,
-							hostId: workspace.hostId,
-						})
-					}
-				>
-					<Icon as={Plus} className="text-muted-foreground size-5" />
-				</Button>
 			</Pressable>
 		</WorkspaceRowMenu>
 	);

@@ -1,3 +1,4 @@
+import { Trans } from "@lingui/react/macro";
 import { Label } from "@superset/ui/label";
 import {
 	Select,
@@ -85,7 +86,11 @@ export function LinkTierMapper({
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									<SelectItem value="none">Do nothing</SelectItem>
+									<SelectItem value="none">
+										<Trans id="settings.links.tierMapper.doNothing">
+											Do nothing
+										</Trans>
+									</SelectItem>
 									{(surface === "file" ? FILE_ACTIONS : URL_ACTIONS).map(
 										(action) => (
 											<SelectItem key={action} value={action}>

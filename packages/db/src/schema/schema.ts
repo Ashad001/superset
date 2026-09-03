@@ -1,5 +1,6 @@
-import { sql } from "drizzle-orm";
+import { desc, sql } from "drizzle-orm";
 import {
+	bigint,
 	boolean,
 	check,
 	foreignKey,
@@ -27,7 +28,11 @@ import {
 	desktopNoticeCtaActionValues,
 	desktopNoticeSeverityValues,
 	desktopNoticeTriggerValues,
+	environmentSourceKindValues,
 	integrationProviderValues,
+	pageCommentAnchorKindValues,
+	pageCommentAuthorKindValues,
+	pageVisibilityValues,
 	taskPriorityValues,
 	taskStatusEnumValues,
 	v2ClientTypeValues,
@@ -55,6 +60,10 @@ export const cloudWorkspaceStatus = pgEnum(
 	"cloud_workspace_status",
 	cloudWorkspaceStatusValues,
 );
+export const environmentSourceKind = pgEnum(
+	"environment_source_kind",
+	environmentSourceKindValues,
+);
 export const v2ClientType = pgEnum("v2_client_type", v2ClientTypeValues);
 export const v2UsersHostRole = pgEnum(
 	"v2_users_host_role",
@@ -63,6 +72,15 @@ export const v2UsersHostRole = pgEnum(
 export const v2WorkspaceType = pgEnum(
 	"v2_workspace_type",
 	v2WorkspaceTypeValues,
+);
+export const pageVisibility = pgEnum("page_visibility", pageVisibilityValues);
+export const pageCommentAnchorKind = pgEnum(
+	"page_comment_anchor_kind",
+	pageCommentAnchorKindValues,
+);
+export const pageCommentAuthorKind = pgEnum(
+	"page_comment_author_kind",
+	pageCommentAuthorKindValues,
 );
 
 export const taskStatuses = pgTable(
@@ -144,6 +162,10 @@ export const tasks = pgTable(
 		externalUrl: text("external_url"),
 		lastSyncedAt: timestamp("last_synced_at"),
 		syncError: text("sync_error"),
+		// The provider's own updatedAt, recorded on every write in either
+		// direction. An inbound event no newer than this is our own echo or a
+		// redelivery that arrived late, and is not applied.
+		externalUpdatedAt: timestamp("external_updated_at"),
 
 		// External project/cycle snapshot (from Linear)
 		externalProjectId: text("external_project_id"),
@@ -296,6 +318,46 @@ export const subscriptions = pgTable(
 
 export type InsertSubscription = typeof subscriptions.$inferInsert;
 export type SelectSubscription = typeof subscriptions.$inferSelect;
+
+// Partner-deal redemptions (currently the YC Bookface deal). One row per
+// redemption webhook delivery; the outcome is either an auto-granted
+// subscription or a single-use promotion code emailed to the redeemer.
+export const dealRedemptions = pgTable(
+	"deal_redemptions",
+	{
+		id: uuid().primaryKey().defaultRandom(),
+		source: text().notNull(),
+		externalRedemptionId: text("external_redemption_id").notNull(),
+		dealId: integer("deal_id").notNull(),
+		email: text(),
+		name: text(),
+		companyName: text("company_name"),
+		companyBatch: text("company_batch"),
+		// granted | code_sent | pending
+		status: text().notNull(),
+		organizationId: uuid("organization_id").references(() => organizations.id, {
+			onDelete: "set null",
+		}),
+		stripeSubscriptionId: text("stripe_subscription_id"),
+		promotionCode: text("promotion_code"),
+		payload: jsonb(),
+		createdAt: timestamp("created_at").notNull().defaultNow(),
+		updatedAt: timestamp("updated_at")
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(table) => [
+		uniqueIndex("deal_redemptions_source_external_id_unique").on(
+			table.source,
+			table.externalRedemptionId,
+		),
+		index("deal_redemptions_email_idx").on(table.email),
+	],
+);
+
+export type InsertDealRedemption = typeof dealRedemptions.$inferInsert;
+export type SelectDealRedemption = typeof dealRedemptions.$inferSelect;
 
 // Device presence — v1 concept. Tracks per-(user, machine) presence for
 // MCP ownership verification. Untouched by the v2 host consolidation; will
@@ -481,6 +543,70 @@ export type SelectV2Project = typeof v2Projects.$inferSelect;
  * provider's wake-on-inbound sleep. Clients reach it directly at `sandbox_url`
  * with a token brokered by the cloud.
  */
+export const environments = pgTable(
+	"environments",
+	{
+		id: uuid().primaryKey().defaultRandom(),
+		organizationId: uuid("organization_id")
+			.notNull()
+			.references(() => organizations.id, { onDelete: "cascade" }),
+		name: text().notNull(),
+		provider: text().notNull().default("blaxel"),
+		sourceKind: environmentSourceKind("source_kind").notNull(),
+		sourceRef: text("source_ref").notNull(),
+		archivedAt: timestamp("archived_at", { withTimezone: true }),
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(table) => [
+		index("environments_organization_id_idx").on(table.organizationId),
+		unique("environments_organization_id_name_unique").on(
+			table.organizationId,
+			table.name,
+		),
+	],
+);
+
+export const environmentSecrets = pgTable(
+	"environment_secrets",
+	{
+		id: uuid().primaryKey().defaultRandom(),
+		organizationId: uuid("organization_id")
+			.notNull()
+			.references(() => organizations.id, { onDelete: "cascade" }),
+		environmentId: uuid("environment_id")
+			.notNull()
+			.references(() => environments.id, { onDelete: "cascade" }),
+		key: text().notNull(),
+		encryptedValue: text("encrypted_value").notNull(),
+		sensitive: boolean().notNull(),
+		createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+			onDelete: "set null",
+		}),
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(table) => [
+		unique("environment_secrets_environment_id_organization_id_key_unique").on(
+			table.environmentId,
+			table.organizationId,
+			table.key,
+		),
+		index("environment_secrets_environment_id_idx").on(table.environmentId),
+		index("environment_secrets_organization_id_idx").on(table.organizationId),
+	],
+);
+
 export const cloudWorkspaces = pgTable(
 	"cloud_workspaces",
 	{
@@ -488,9 +614,6 @@ export const cloudWorkspaces = pgTable(
 		organizationId: uuid("organization_id")
 			.notNull()
 			.references(() => organizations.id, { onDelete: "cascade" }),
-		projectId: uuid("project_id")
-			.notNull()
-			.references(() => v2Projects.id, { onDelete: "cascade" }),
 		// Creation inputs, not the workspace's identity: the sandbox's own
 		// host.db owns the workspace row (name, branch) once it is seeded, the
 		// same way every other host does. Read these to provision a sandbox,
@@ -502,6 +625,11 @@ export const cloudWorkspaces = pgTable(
 		providerSandboxId: text("provider_sandbox_id").notNull(),
 		sandboxUrl: text("sandbox_url"),
 		status: cloudWorkspaceStatus().notNull().default("provisioning"),
+		environmentId: uuid("environment_id")
+			.notNull()
+			.references(() => environments.id),
+		hostVersion: text("host_version"),
+		deletedAt: timestamp("deleted_at", { withTimezone: true }),
 		createdByUserId: uuid("created_by_user_id").references(() => users.id, {
 			onDelete: "set null",
 		}),
@@ -515,7 +643,6 @@ export const cloudWorkspaces = pgTable(
 	},
 	(table) => [
 		index("cloud_workspaces_organization_id_idx").on(table.organizationId),
-		index("cloud_workspaces_project_id_idx").on(table.projectId),
 		unique("cloud_workspaces_provider_sandbox_id_unique").on(
 			table.provider,
 			table.providerSandboxId,
@@ -737,34 +864,6 @@ export const chatSessions = pgTable(
 export type InsertChatSession = typeof chatSessions.$inferInsert;
 export type SelectChatSession = typeof chatSessions.$inferSelect;
 
-export const chatAttachments = pgTable(
-	"chat_attachments",
-	{
-		id: uuid().primaryKey().defaultRandom(),
-		chatSessionId: uuid("chat_session_id")
-			.notNull()
-			.references(() => chatSessions.id, { onDelete: "cascade" }),
-		createdBy: uuid("created_by")
-			.notNull()
-			.references(() => users.id, { onDelete: "cascade" }),
-		organizationId: uuid("organization_id")
-			.notNull()
-			.references(() => organizations.id, { onDelete: "cascade" }),
-		blobPathname: text("blob_pathname").notNull(),
-		mediaType: text("media_type").notNull(),
-		filename: text().notNull(),
-		sizeBytes: integer("size_bytes").notNull(),
-		createdAt: timestamp("created_at").notNull().defaultNow(),
-	},
-	(table) => [
-		index("chat_attachments_session_idx").on(table.chatSessionId),
-		index("chat_attachments_created_by_idx").on(table.createdBy),
-	],
-);
-
-export type InsertChatAttachment = typeof chatAttachments.$inferInsert;
-export type SelectChatAttachment = typeof chatAttachments.$inferSelect;
-
 export const automationRunStatus = pgEnum(
 	"automation_run_status",
 	automationRunStatusValues,
@@ -806,6 +905,13 @@ export const automations = pgTable(
 		// workspace (or the pinned v2WorkspaceId is itself a session).
 		v2ProjectId: uuid("v2_project_id"),
 		v2WorkspaceId: uuid("v2_workspace_id"),
+
+		// Workspace tags applied to each run's created workspace, so scheduled
+		// runs file themselves into the matching sidebar folders. Stored
+		// normalized (see @superset/shared/workspace-tags). Defaults to
+		// ["automation"] so every automation groups its runs out of the box;
+		// clearing the set in the editor is the opt-out.
+		tags: jsonb().$type<string[]>().notNull().default(["automation"]),
 
 		// The schedule lives in the automation's `schedule` trigger.
 		enabled: boolean().notNull().default(true),
@@ -922,7 +1028,10 @@ export const automationEvents = pgTable(
 		actorIsExternal: boolean("actor_is_external"),
 
 		// Its own copy: ingest is prunable and the prompt needs this at dispatch.
-		payload: jsonb().notNull(),
+		// Nullable because the pruner nulls it once the row ages out, the same
+		// way ingest.webhook_events works. NULL means pruned, not "arrived
+		// empty" — every row is written with a payload.
+		payload: jsonb(),
 
 		// Provenance pointer, deliberately not a foreign key, so ingest stays
 		// prunable. Null for webhook and superset events.
@@ -958,6 +1067,12 @@ export const automationEvents = pgTable(
 			t.receivedAt,
 		),
 		index("automation_events_resource_idx").on(t.resourceKey),
+		// The pruner scans oldest-first for rows that still have a body. Without
+		// this the planner walks automation_events_org_received_idx end to end and
+		// sorts, per batch. Partial, so it shrinks as the backlog drains.
+		index("automation_events_prunable_idx")
+			.on(t.receivedAt)
+			.where(sql`${t.payload} IS NOT NULL`),
 	],
 );
 
@@ -1146,3 +1261,278 @@ export const desktopNotices = pgTable(
 
 export type InsertDesktopNotice = typeof desktopNotices.$inferInsert;
 export type SelectDesktopNotice = typeof desktopNotices.$inferSelect;
+
+export const pages = pgTable(
+	"pages",
+	{
+		id: uuid().primaryKey().defaultRandom(),
+		slug: text().notNull(),
+		organizationId: uuid("organization_id")
+			.notNull()
+			.references(() => organizations.id, { onDelete: "cascade" }),
+		createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+			onDelete: "set null",
+		}),
+		title: text().notNull(),
+		description: text(),
+		visibility: pageVisibility().notNull().default("just_me"),
+		sharedVersion: integer("shared_version"),
+		watchedByAgent: text("watched_by_agent"),
+		watchHeartbeatAt: timestamp("watch_heartbeat_at", { withTimezone: true }),
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(table) => [
+		uniqueIndex("pages_slug_unique").on(table.slug),
+		index("pages_organization_id_updated_at_idx").on(
+			table.organizationId,
+			desc(table.updatedAt),
+		),
+		index("pages_created_by_user_id_idx").on(table.createdByUserId),
+	],
+);
+
+export type InsertPage = typeof pages.$inferInsert;
+export type SelectPage = typeof pages.$inferSelect;
+
+export const pageVersions = pgTable(
+	"page_versions",
+	{
+		id: uuid().primaryKey().defaultRandom(),
+		pageId: uuid("page_id")
+			.notNull()
+			.references(() => pages.id, { onDelete: "cascade" }),
+		version: integer().notNull(),
+		label: text(),
+		storageKey: text("storage_key").notNull(),
+		contentType: text("content_type").notNull(),
+		sizeBytes: integer("size_bytes").notNull(),
+		sha256: text().notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+			onDelete: "set null",
+		}),
+	},
+	(table) => [
+		unique("page_versions_page_id_version_unique").on(
+			table.pageId,
+			table.version,
+		),
+		index("page_versions_page_id_idx").on(table.pageId),
+	],
+);
+
+export type InsertPageVersion = typeof pageVersions.$inferInsert;
+export type SelectPageVersion = typeof pageVersions.$inferSelect;
+
+export const workspacePages = pgTable(
+	"workspace_pages",
+	{
+		workspaceId: uuid("workspace_id").notNull(),
+		pageId: uuid("page_id")
+			.notNull()
+			.references(() => pages.id, { onDelete: "cascade" }),
+		entryPath: text("entry_path").notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+	},
+	(table) => [
+		primaryKey({ columns: [table.workspaceId, table.pageId] }),
+		uniqueIndex("workspace_pages_workspace_id_entry_path_unique").on(
+			table.workspaceId,
+			table.entryPath,
+		),
+		index("workspace_pages_page_id_idx").on(table.pageId),
+	],
+);
+
+export type InsertWorkspacePage = typeof workspacePages.$inferInsert;
+export type SelectWorkspacePage = typeof workspacePages.$inferSelect;
+
+export const fileStatus = pgEnum("file_status", ["pending", "ready"]);
+
+export const attachmentParentKind = pgEnum("attachment_parent_kind", [
+	"page_version",
+	"issue",
+	"doc",
+	"chat_session",
+	"comment",
+	// Staging. Assets upload against the page before the version they will
+	// belong to exists; publish snapshots them onto that version and clears
+	// the staged rows, so a version is never served missing its own assets.
+	"page",
+]);
+
+/**
+ * The library: one row per uploaded object, bytes at
+ * `files/<id>/original` in the private bucket. `contentType` holds the
+ * client's declaration while `pending` and the server-sniffed type once
+ * `ready` — the serve-time policy keys on it, so it is never trusted from
+ * the client. A file with no attachments left is deleted; `pending` rows
+ * older than a day are swept.
+ */
+export const files = pgTable(
+	"files",
+	{
+		id: uuid().primaryKey().defaultRandom(),
+		organizationId: uuid("organization_id")
+			.notNull()
+			.references(() => organizations.id, { onDelete: "cascade" }),
+		name: text().notNull(),
+		contentType: text("content_type").notNull(),
+		sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+		sha256: text().notNull(),
+		status: fileStatus().notNull().default("pending"),
+		createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+			onDelete: "set null",
+		}),
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(table) => [
+		index("files_organization_id_created_at_idx").on(
+			table.organizationId,
+			desc(table.createdAt),
+		),
+		index("files_status_created_at_idx").on(table.status, table.createdAt),
+	],
+);
+
+export type InsertFile = typeof files.$inferInsert;
+export type SelectFile = typeof files.$inferSelect;
+
+/**
+ * Places a file on a parent — a page version, an issue, a doc, a chat
+ * session, a comment. Access to the bytes always derives from access to the
+ * parent; no foreign key on the parent because the kinds live in different
+ * tables (and some don't exist yet). `path` is the relative path a page
+ * asset was published at, unique within its version; null for everything
+ * else.
+ */
+export const attachments = pgTable(
+	"attachments",
+	{
+		id: uuid().primaryKey().defaultRandom(),
+		fileId: uuid("file_id")
+			.notNull()
+			.references(() => files.id, { onDelete: "cascade" }),
+		parentKind: attachmentParentKind("parent_kind").notNull(),
+		parentId: uuid("parent_id").notNull(),
+		path: text(),
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+	},
+	(table) => [
+		index("attachments_file_id_idx").on(table.fileId),
+		index("attachments_parent_kind_parent_id_idx").on(
+			table.parentKind,
+			table.parentId,
+		),
+		uniqueIndex("attachments_parent_path_unique")
+			.on(table.parentKind, table.parentId, table.path)
+			.where(sql`${table.path} is not null`),
+	],
+);
+
+export type InsertAttachment = typeof attachments.$inferInsert;
+export type SelectAttachment = typeof attachments.$inferSelect;
+
+export const pageCommentThreads = pgTable(
+	"page_comment_threads",
+	{
+		id: uuid().primaryKey().defaultRandom(),
+		pageId: uuid("page_id")
+			.notNull()
+			.references(() => pages.id, { onDelete: "cascade" }),
+		pageVersionId: uuid("page_version_id")
+			.notNull()
+			.references(() => pageVersions.id, { onDelete: "cascade" }),
+		anchorKind: pageCommentAnchorKind("anchor_kind").notNull(),
+		anchor: jsonb(),
+		anchorText: text("anchor_text"),
+		createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+			onDelete: "set null",
+		}),
+		agentActivatedAt: timestamp("agent_activated_at", { withTimezone: true }),
+		agentActivatedByUserId: uuid("agent_activated_by_user_id").references(
+			() => users.id,
+			{ onDelete: "set null" },
+		),
+		resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+		resolvedByUserId: uuid("resolved_by_user_id").references(() => users.id, {
+			onDelete: "set null",
+		}),
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(table) => [
+		index("page_comment_threads_page_id_idx").on(table.pageId),
+		index("page_comment_threads_page_version_id_idx").on(table.pageVersionId),
+		index("page_comment_threads_open_idx")
+			.on(table.pageId)
+			.where(sql`resolved_at IS NULL`),
+		check(
+			"page_comment_threads_anchor_matches_kind",
+			sql`(anchor_kind = 'page') = (anchor IS NULL)`,
+		),
+	],
+);
+
+export type InsertPageCommentThread = typeof pageCommentThreads.$inferInsert;
+export type SelectPageCommentThread = typeof pageCommentThreads.$inferSelect;
+
+export const pageComments = pgTable(
+	"page_comments",
+	{
+		id: uuid().primaryKey().defaultRandom(),
+		threadId: uuid("thread_id")
+			.notNull()
+			.references(() => pageCommentThreads.id, { onDelete: "cascade" }),
+		authorKind: pageCommentAuthorKind("author_kind").notNull().default("human"),
+		authorUserId: uuid("author_user_id").references(() => users.id, {
+			onDelete: "set null",
+		}),
+		agentSessionId: text("agent_session_id"),
+		body: text().notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+		deletedAt: timestamp("deleted_at", { withTimezone: true }),
+	},
+	(table) => [
+		index("page_comments_thread_id_created_at_idx").on(
+			table.threadId,
+			table.createdAt,
+		),
+		check(
+			"page_comments_agent_has_session",
+			sql`author_kind <> 'agent' OR agent_session_id IS NOT NULL`,
+		),
+	],
+);
+
+export type InsertPageComment = typeof pageComments.$inferInsert;
+export type SelectPageComment = typeof pageComments.$inferSelect;

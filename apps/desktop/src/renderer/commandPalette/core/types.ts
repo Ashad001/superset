@@ -1,3 +1,4 @@
+import type { MessageDescriptor } from "@lingui/core";
 import type { ExternalApp } from "@superset/local-db";
 import type { ElementType } from "react";
 import type { HotkeyId } from "renderer/hotkeys/registry";
@@ -29,13 +30,14 @@ export interface CommandContext {
 	hostServiceStatus: HostServiceAvailabilityStatus;
 	localMachineId: string | null;
 	notificationSoundsMuted: boolean;
+	isV2CloudEnabled: boolean;
 	navigate: (path: string) => void;
 	focusedView?: "editor" | "terminal" | "git" | "issues" | "files" | "chat";
 }
 
 export interface Command {
 	id: string;
-	title: string;
+	title: MessageDescriptor;
 	section: SectionId;
 	icon?: ElementType<{ className?: string }>;
 	iconUrl?: string;
@@ -54,6 +56,6 @@ export interface CommandProvider {
 
 export interface CommandSection {
 	id: SectionId;
-	label: string;
+	label: MessageDescriptor;
 	commands: Command[];
 }

@@ -69,6 +69,10 @@ export const cloudWorkspaceStatusValues = [
 export const cloudWorkspaceStatusEnum = z.enum(cloudWorkspaceStatusValues);
 export type CloudWorkspaceStatus = z.infer<typeof cloudWorkspaceStatusEnum>;
 
+export const environmentSourceKindValues = ["image", "fork"] as const;
+export const environmentSourceKindEnum = z.enum(environmentSourceKindValues);
+export type EnvironmentSourceKind = z.infer<typeof environmentSourceKindEnum>;
+
 export const workspaceTypeValues = ["local", "cloud"] as const;
 export const workspaceTypeEnum = z.enum(workspaceTypeValues);
 export type WorkspaceType = z.infer<typeof workspaceTypeEnum>;
@@ -118,7 +122,6 @@ export const automationTriggerKindValues = [
 	"google_calendar",
 	"gmail",
 	"notion",
-	"circleback",
 ] as const satisfies readonly TriggerConfigInput["kind"][];
 
 export type _EveryKindHasEnumValue = [
@@ -149,3 +152,19 @@ export const desktopNoticeCtaActionValues = [
 	"install-update",
 	"open-url",
 ] as const;
+
+export const pageVisibilityValues = ["just_me", "org", "everyone"] as const;
+export const pageVisibilityEnum = z.enum(pageVisibilityValues);
+export type PageVisibility = z.infer<typeof pageVisibilityEnum>;
+
+export const pageCommentAnchorKindValues = ["element", "text", "page"] as const;
+export const pageCommentAnchorKindEnum = z.enum(pageCommentAnchorKindValues);
+export type PageCommentAnchorKind = z.infer<typeof pageCommentAnchorKindEnum>;
+
+export const pageCommentAuthorKindValues = ["human", "agent"] as const;
+export const pageCommentAuthorKindEnum = z.enum(pageCommentAuthorKindValues);
+export type PageCommentAuthorKind = z.infer<typeof pageCommentAuthorKindEnum>;
+
+export const leaderboardVisibilityValues = ["public", "hidden"] as const;
+export const leaderboardVisibilityEnum = z.enum(leaderboardVisibilityValues);
+export type LeaderboardVisibility = z.infer<typeof leaderboardVisibilityEnum>;

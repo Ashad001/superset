@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchStreamLink, TRPCClientError } from "@trpc/client";
+import { TRPCClientError } from "@trpc/client";
 import { createContext, type ReactNode, useContext } from "react";
-import superjson from "superjson";
+import { createHostServiceLinks } from "../../lib/hostServiceLinks";
 import { workspaceTrpc } from "../../workspace-trpc";
 
 const STALE_TIME_MS = 5_000;
@@ -93,13 +93,7 @@ function getWorkspaceClients(
 	});
 
 	const trpcClient = workspaceTrpc.createClient({
-		links: [
-			httpBatchStreamLink({
-				url: `${hostUrl}/trpc`,
-				transformer: superjson,
-				headers: headers ?? (() => ({})),
-			}),
-		],
+		links: createHostServiceLinks({ url: `${hostUrl}/trpc`, headers }),
 	});
 
 	const getWsToken = wsToken ?? (() => null);

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+	buildDefaultAccountResolver,
 	buildWrapperScript,
 	createWrapper,
 	getManagedNotifyHookCommand,
@@ -23,7 +24,7 @@ import { getOpenCodeConfigDir, getOpenCodePluginDir } from "./paths";
 export const OPENCODE_PLUGIN_FILE = "superset-notify.js";
 
 const OPENCODE_PLUGIN_SIGNATURE = "// Superset opencode plugin";
-const OPENCODE_PLUGIN_VERSION = "v8";
+const OPENCODE_PLUGIN_VERSION = "v9";
 export const OPENCODE_PLUGIN_MARKER = `${OPENCODE_PLUGIN_SIGNATURE} ${OPENCODE_PLUGIN_VERSION}`;
 
 /**
@@ -155,8 +156,10 @@ export function getCodexGlobalHooksJsonPath(): string {
 
 const CODEX_MANAGED_EVENTS: Record<string, { matcher?: string }> = {
 	SessionStart: {},
+	SessionEnd: {},
 	UserPromptSubmit: {},
 	Stop: {},
+	Interrupt: {},
 };
 
 function codexHooksSpec(
@@ -251,25 +254,35 @@ export function getOpenCodePluginContent(notifyPath: string): string {
 }
 
 /**
- * Pass-through wrapper for Claude. Hooks live in ~/.claude/settings.json
- * (createClaudeSettingsJson); the wrapper exists only to forward SUPERSET_*
- * env vars into the agent process tree.
+ * Wrapper for Claude: forwards SUPERSET_* env vars into the agent process
+ * tree and follows the Usage-tab account switch at launch time. Hooks live
+ * in ~/.claude/settings.json (createClaudeSettingsJson).
  */
 export function createClaudeWrapper(): void {
-	const script = buildWrapperScript("claude", `exec "$REAL_BIN" "$@"`, {
-		agentId: "claude",
-	});
+	const script = buildWrapperScript(
+		"claude",
+		`${buildDefaultAccountResolver(
+			"CLAUDE_CONFIG_DIR",
+			"default-claude-config-dir",
+		)}exec "$REAL_BIN" "$@"`,
+		{ agentId: "claude" },
+	);
 	createWrapper("claude", script);
 }
 
 /**
- * Creates the Codex wrapper that enables native hooks and session-log signals.
+ * Creates the Codex wrapper that enables native hooks and session-log signals,
+ * and follows the Usage-tab account switch at launch time.
  */
 export function createCodexWrapper(): void {
 	const notifyPath = getNotifyScriptPath();
 	const script = buildWrapperScript(
 		"codex",
-		buildCodexWrapperExecLine(notifyPath),
+		buildDefaultAccountResolver(
+			"CODEX_HOME",
+			"default-codex-home",
+			"SUPERSET_AMBIENT_CODEX_HOME",
+		) + buildCodexWrapperExecLine(notifyPath),
 		{ agentId: "codex" },
 	);
 	createWrapper("codex", script);

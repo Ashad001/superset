@@ -7,8 +7,10 @@ export type SettingsSection =
 	| "teams"
 	| "appearance"
 	| "ringtones"
+	| "usage"
 	| "keyboard"
 	| "behavior"
+	| "browser"
 	| "git"
 	| "agents"
 	| "terminal"
@@ -21,7 +23,8 @@ export type SettingsSection =
 	| "permissions"
 	| "security"
 	| "project"
-	| "hosts";
+	| "hosts"
+	| "environments";
 
 interface SettingsState {
 	activeSection: SettingsSection;

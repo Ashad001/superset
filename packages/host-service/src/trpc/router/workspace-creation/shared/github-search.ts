@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import type { GitCredentialProvider } from "../../../../runtime/git/types";
 import type { ResolvedGithubRepo } from "./project-helpers";
 
 /** A requested project paired with the repo its local remote points at. */
@@ -91,6 +92,32 @@ export function chunkProjectRepos(
 	}
 	if (current.length > 0) chunks.push(current);
 	return chunks;
+}
+
+/**
+ * Keep the chunks that answered. A chunk fails on its own terms — GitHub
+ * rejects the whole query when it names a repo the token cannot see, a
+ * request times out — and one such failure must not blank the repos that
+ * did answer. The failure only surfaces when every chunk failed, so a total
+ * outage still reports rather than returning a silently empty page.
+ */
+export function collectChunkResults<T>(settled: PromiseSettledResult<T>[]): {
+	results: T[];
+	failures: unknown[];
+} {
+	const results = settled.flatMap((result) =>
+		result.status === "fulfilled" ? [result.value] : [],
+	);
+	const failures = settled.flatMap((result) =>
+		result.status === "rejected" ? [result.reason] : [],
+	);
+	for (const failure of failures) {
+		// A rate limit is account-wide, not per-chunk: keeping a partial page
+		// would hide why the rest is missing and would flap between polls.
+		if (isGithubRateLimitError(failure)) throw failure;
+	}
+	if (results.length === 0 && failures.length > 0) throw failures[0];
+	return { results, failures };
 }
 
 // REST search items carry `repository_url` like
@@ -194,6 +221,37 @@ export function githubRateLimitError(error: unknown): TRPCError {
 		message: `GitHub API rate limit exceeded. Try again in a few minutes.${resetSuffix}`,
 		cause: error,
 	});
+}
+
+/**
+ * Rejected-credential failures: Octokit throws a 401 RequestError ("Bad
+ * credentials"); the gh CLI prints the same text (or "HTTP 401") with no
+ * status field.
+ */
+export function isGithubAuthError(error: unknown): boolean {
+	if (isRecord(error) && error.status === 401) return true;
+	return /bad credentials|\bHTTP 401\b/i.test(errorText(error));
+}
+
+/**
+ * Classify a search failure for the client. A raw "Bad credentials" reads
+ * like a broken GitHub App integration, so a 401 has to say which
+ * credential GitHub refused and where that credential lives (#6832).
+ * Anything unrecognized passes through untouched.
+ */
+export function githubRequestError(
+	error: unknown,
+	credentials: GitCredentialProvider,
+): unknown {
+	if (isGithubRateLimitError(error)) return githubRateLimitError(error);
+	if (isGithubAuthError(error)) {
+		return new TRPCError({
+			code: "UNAUTHORIZED",
+			message: credentials.credentialRemedy("github.com", "rejected"),
+			cause: error,
+		});
+	}
+	return error;
 }
 
 /**

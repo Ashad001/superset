@@ -1,14 +1,13 @@
 import { LegendList } from "@legendapp/list/react-native";
+import { useLingui } from "@lingui/react/macro";
+import { i18n } from "@superset/i18n";
 import { useQueryClient } from "@tanstack/react-query";
 import { isAfter } from "date-fns";
 import * as Haptics from "expo-haptics";
-import { useFocusEffect, useRouter } from "expo-router";
-import { Cloud, Search } from "lucide-react-native";
+import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { RefreshControl, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import {
 	type CloudWorkspaceStatus,
@@ -20,6 +19,7 @@ import {
 	useHostWorkspaces,
 } from "@/hooks/useHostWorkspaces";
 import { useSelectedHost } from "@/screens/(authenticated)/(home)/hooks/useSelectedHost";
+import { useWorkspaceScope } from "@/screens/(authenticated)/(home)/hooks/useWorkspaceScope";
 import { useOrganizations } from "@/screens/(authenticated)/hooks/useOrganizations";
 import {
 	type OrgPullRequest,
@@ -29,12 +29,13 @@ import { usePinnedWorkspacesStore } from "@/screens/(authenticated)/stores/pinne
 import { pullRequestStatus } from "@/screens/(authenticated)/workspace/[id]/utils/pullRequest";
 import { HostOfflineView } from "./components/HostOfflineView";
 import { NewChatWidget } from "./components/NewChatWidget";
+import { targetKeyFor } from "./components/NewChatWidget/hooks/useNewChatTargets";
+import { useNewSessionPreferencesStore } from "./components/NewChatWidget/stores/newSessionPreferencesStore";
 import { OrganizationHeaderButton } from "./components/OrganizationHeaderButton";
-import { OrganizationSwitcherSheet } from "./components/OrganizationSwitcherSheet";
 import { ProjectSectionHeader } from "./components/ProjectSectionHeader";
 import { ScopeBar } from "./components/ScopeBar";
 import { WorkspaceRow } from "./components/WorkspaceRow";
-import { useCloudRepoPrefixes } from "./hooks/useCloudRepoPrefixes";
+import { useCloudRepoPrefix } from "./hooks/useCloudRepoPrefixes";
 import {
 	type TerminalsHost,
 	useHostsTerminals,
@@ -44,6 +45,7 @@ import {
 	collapsedProjectKey,
 	useCollapsedProjectsStore,
 } from "./stores/collapsedProjectsStore";
+import { useComposerFocusStore } from "./stores/composerFocusStore";
 import {
 	SORT_OPTIONS,
 	useWorkspacesFilterStore,
@@ -59,12 +61,13 @@ const MAX_VISIBLE_DIFF_STATS = 20;
 const NAVIGATION_BAR_HEIGHT = 44;
 
 /**
- * Cloud workspaces sit in their own section above the projects. They belong
- * to no host and, since a sandbox's project row is fabricated, to no project
- * the selected host knows — so they neither scope to the host filter nor
- * group under a project header. Same shape as desktop's sidebar.
+ * Cloud is a scope of its own, picked from the same chip as your machines,
+ * rather than a section pinned above whichever machine is selected. It belongs
+ * to no host and, since a sandbox's project row is fabricated, to no project a
+ * host knows — so under Cloud the rows are a flat list and the chip, not a
+ * header, says where you are. Desktop pins it above the projects instead: a
+ * sidebar can afford a permanent section, a phone list is the whole screen.
  */
-const CLOUD_SECTION_ID = "__cloud";
 
 type HomeListItem =
 	| {
@@ -80,7 +83,6 @@ type HomeListItem =
 			workspace: HostWorkspaceItem;
 			cloudStatus?: CloudWorkspaceStatus;
 	  }
-	| { kind: "note"; label: string }
 	| { kind: "hostOffline"; hostName: string };
 
 function homeListItemKey(item: HomeListItem): string {
@@ -89,31 +91,28 @@ function homeListItemKey(item: HomeListItem): string {
 			return `project:${item.projectId}`;
 		case "workspace":
 			return `ws:${item.workspace.id}`;
-		case "hostOffline":
-			return "host-offline";
 		default:
-			return `note:${item.label}`;
+			return "host-offline";
 	}
 }
 
 export function HomeScreen() {
+	const { t } = useLingui();
 	const router = useRouter();
-	const [sheetOpen, setSheetOpen] = useState(false);
 	const sort = useWorkspacesFilterStore((store) => store.sort);
 	const hasHydrated = useWorkspacesFilterStore((store) => store.hasHydrated);
-	const [searchQuery, setSearchQuery] = useState("");
 	const [visibleIds, setVisibleIds] = useState<string[]>([]);
 	const [refreshing, setRefreshing] = useState(false);
-	const { width, height: windowHeight } = useWindowDimensions();
+	const { height: windowHeight } = useWindowDimensions();
 	const insets = useSafeAreaInsets();
 	const queryClient = useQueryClient();
-	const {
-		isLoadingOrganizations,
-		organizations,
-		activeOrganization,
-		activeOrganizationId,
-		switchOrganization,
-	} = useOrganizations();
+	const setTargetKey = useNewSessionPreferencesStore(
+		(state) => state.setTargetKey,
+	);
+	const requestComposerFocus = useComposerFocusStore(
+		(state) => state.requestFocus,
+	);
+	const { isLoadingOrganizations, activeOrganization } = useOrganizations();
 
 	const selectedHost = useSelectedHost();
 	const pinnedAt = usePinnedWorkspacesStore((state) => state.pinnedAt);
@@ -124,23 +123,29 @@ export function HomeScreen() {
 		cache: cloudCache,
 		isReady: cloudReady,
 	} = useCloudWorkspaceItems();
+	const cloudScope = useWorkspaceScope() === "cloud";
 	// Every addressed sandbox is a host of its own for the terminal fan-out,
 	// so cloud rows get session marks and attention like any other row. Lazier
 	// than the machine host on purpose: each sandbox is its own request, and a
 	// phone paying N requests every 5s for list decoration is the mistake
 	// desktop just walked back (#6570). Opening a workspace speeds up its own
 	// host via the shared query key.
+	// Only the scope on screen is polled: a sandbox costs its own request, and
+	// paying for every one of them to decorate rows the list isn't showing is
+	// the mistake desktop just walked back (#6570).
 	const terminalHosts = useMemo<TerminalsHost[]>(
-		() => [
-			...(selectedHost ? [selectedHost] : []),
-			...sandboxes.map((sandbox) => ({
-				organizationId: sandbox.organizationId,
-				machineId: sandbox.workspaceId,
-				isOnline: true,
-				refetchIntervalMs: 30_000,
-			})),
-		],
-		[selectedHost, sandboxes],
+		() =>
+			cloudScope
+				? sandboxes.map((sandbox) => ({
+						organizationId: sandbox.organizationId,
+						machineId: sandbox.workspaceId,
+						isOnline: true,
+						refetchIntervalMs: 30_000,
+					}))
+				: selectedHost
+					? [selectedHost]
+					: [],
+		[selectedHost, sandboxes, cloudScope],
 	);
 	const { terminalsByWorkspace, attentionByWorkspace } =
 		useHostsTerminals(terminalHosts);
@@ -156,8 +161,6 @@ export function HomeScreen() {
 	const toggleProject = useCollapsedProjectsStore(
 		(state) => state.toggleProject,
 	);
-
-	const searching = searchQuery.trim().length > 0;
 
 	// Recency ranks a workspace by its latest activity — the newest of its own
 	// update and its terminals'.
@@ -196,82 +199,32 @@ export function HomeScreen() {
 		[workspaces],
 	);
 
-	const projectNamesById = useMemo(
-		() => new Map(projects.map((project) => [project.id, project.name])),
-		[projects],
-	);
-
-	const matchesQuery = useCallback(
-		(workspace: HostWorkspaceItem) => {
-			const needle = searchQuery.trim().toLowerCase();
-			if (!needle) return true;
-			const sessions = terminalsByWorkspace.get(workspace.id) ?? [];
-			return (
-				workspace.name.toLowerCase().includes(needle) ||
-				workspace.branch.toLowerCase().includes(needle) ||
-				(
-					(workspace.projectId
-						? projectNamesById.get(workspace.projectId)
-						: undefined) ?? ""
-				)
-					.toLowerCase()
-					.includes(needle) ||
-				sessions.some((row) => row.title.toLowerCase().includes(needle))
-			);
-		},
-		[searchQuery, projectNamesById, terminalsByWorkspace],
-	);
-
 	const listItems = useMemo<HomeListItem[]>(() => {
 		const items: HomeListItem[] = [];
 
-		const cloudPool = searching ? cloudItems.filter(matchesQuery) : cloudItems;
-		if (cloudPool.length > 0) {
-			const isCollapsed =
-				!searching &&
-				collapseHydrated &&
-				!!collapsed[collapsedProjectKey(CLOUD_SECTION_ID, CLOUD_SECTION_ID)];
-			items.push({
-				kind: "projectHeader",
-				projectId: CLOUD_SECTION_ID,
-				name: "Cloud",
-				count: cloudPool.length,
-				collapsed: isCollapsed,
-			});
-			if (!isCollapsed) {
-				for (const workspace of [...cloudPool].sort(byPinThenActivity)) {
-					items.push({
-						kind: "workspace",
-						workspace,
-						cloudStatus: workspace.cloud.status,
-					});
-				}
+		// Under Cloud the sandboxes are the whole list: flat, no project headers
+		// to group them by and no machine to be offline.
+		if (cloudScope) {
+			for (const workspace of [...cloudItems].sort(byPinThenActivity)) {
+				items.push({
+					kind: "workspace",
+					workspace,
+					cloudStatus: workspace.cloud.status,
+				});
 			}
+			return items;
 		}
 
-		// The selected machine's rows follow. When it is offline the section
-		// gives way to the offline placeholder, but the cloud rows above it stay
-		// — a sandbox doesn't care which of your machines is awake.
+		// A machine's rows. When it is offline the whole scope gives way to the
+		// placeholder — Cloud is a chip away rather than stranded above it.
 		if (selectedHost && !selectedHost.isOnline) {
 			items.push({ kind: "hostOffline", hostName: selectedHost.name });
 			return items;
 		}
 
-		const onThisHost = liveWorkspaces.filter(
+		const pool = liveWorkspaces.filter(
 			(workspace) => workspace.hostId === selectedHost?.machineId,
 		);
-
-		// Search reaches every project on this host but no further — the
-		// workspace query is per-host, so other machines aren't in memory to
-		// search. The count says "on this host" rather than implying otherwise.
-		const pool = searching ? onThisHost.filter(matchesQuery) : onThisHost;
-
-		if (searching) {
-			items.push({
-				kind: "note",
-				label: `${pool.length} ${pool.length === 1 ? "result" : "results"} on this host`,
-			});
-		}
 
 		// A project id the host no longer reports is as good as none: grouping
 		// under it would render the workspace nowhere, since sections come from
@@ -313,7 +266,6 @@ export function HomeScreen() {
 
 		for (const section of sections) {
 			const isCollapsed =
-				!searching &&
 				collapseHydrated &&
 				!!collapsed[
 					collapsedProjectKey(selectedHost?.machineId ?? "", section.project.id)
@@ -338,7 +290,7 @@ export function HomeScreen() {
 			items.push({
 				kind: "projectHeader",
 				projectId: "__none",
-				name: "No project",
+				name: t({ id: "mobile.home.noProject", message: "No project" }),
 				count: orphans.length,
 				collapsed: false,
 			});
@@ -351,14 +303,14 @@ export function HomeScreen() {
 	}, [
 		liveWorkspaces,
 		cloudItems,
+		cloudScope,
 		selectedHost,
 		projects,
-		searching,
-		matchesQuery,
 		byPinThenActivity,
 		activityTs,
 		collapsed,
 		collapseHydrated,
+		t,
 	]);
 
 	const composerWorkspaces = useMemo(
@@ -459,11 +411,10 @@ export function HomeScreen() {
 	// Projects are fully local: PR rows are matched by repo coordinates
 	// parsed from the PR URL (cloud repo UUIDs aren't known host-side).
 	// Cloud rows' projects come from the API instead.
-	const cloudRepoPrefixes = useCloudRepoPrefixes(cloudItems);
+	const cloudRepoPrefix = useCloudRepoPrefix();
 	const repoPrefixesByProject = useMemo(
 		() =>
 			new Map<string, string | null>([
-				...cloudRepoPrefixes,
 				...projects.map((project): [string, string | null] => [
 					project.id,
 					project.repoOwner && project.repoName
@@ -471,18 +422,11 @@ export function HomeScreen() {
 						: null,
 				]),
 			]),
-		[projects, cloudRepoPrefixes],
+		[projects],
 	);
 
 	const renderItem = useCallback(
 		({ item }: { item: HomeListItem }) => {
-			if (item.kind === "note") {
-				return (
-					<Text className="text-muted-foreground px-4 pb-1 pt-3 font-semibold text-xs">
-						{item.label}
-					</Text>
-				);
-			}
 			if (item.kind === "hostOffline") {
 				return (
 					<View className="py-16">
@@ -491,38 +435,38 @@ export function HomeScreen() {
 				);
 			}
 			if (item.kind === "projectHeader") {
-				const isCloudSection = item.projectId === CLOUD_SECTION_ID;
+				// Only a machine's projects get headers — Cloud is a flat scope.
+				const machineId = selectedHost?.machineId;
 				return (
 					<ProjectSectionHeader
 						name={item.name}
 						iconUrl={item.iconUrl}
-						icon={
-							isCloudSection ? (
-								<Icon
-									as={Cloud}
-									className="text-muted-foreground size-5"
-									strokeWidth={1.75}
-								/>
-							) : undefined
-						}
 						count={item.count}
 						collapsed={item.collapsed}
 						onToggle={() => {
 							void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-							toggleProject(
-								isCloudSection
-									? CLOUD_SECTION_ID
-									: (selectedHost?.machineId ?? ""),
-								item.projectId,
-							);
+							toggleProject(machineId ?? "", item.projectId);
 						}}
+						onNewWorkspace={
+							// "__none" collects orphans of projects the host no longer
+							// reports — there is nothing to create into.
+							machineId && item.projectId !== "__none"
+								? () => {
+										void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+										setTargetKey(targetKeyFor(item.projectId, machineId));
+										requestComposerFocus();
+									}
+								: undefined
+						}
 					/>
 				);
 			}
 			const { workspace, cloudStatus } = item;
-			const repoPrefix = workspace.projectId
-				? repoPrefixesByProject.get(workspace.projectId)
-				: undefined;
+			const repoPrefix = cloudStatus
+				? cloudRepoPrefix
+				: workspace.projectId
+					? repoPrefixesByProject.get(workspace.projectId)
+					: undefined;
 			return (
 				<WorkspaceRow
 					workspace={workspace}
@@ -543,6 +487,7 @@ export function HomeScreen() {
 		},
 		[
 			pullRequestsByRepoBranch,
+			cloudRepoPrefix,
 			repoPrefixesByProject,
 			diffStats,
 			cache,
@@ -551,61 +496,29 @@ export function HomeScreen() {
 			terminalsByWorkspace,
 			toggleProject,
 			selectedHost,
+			setTargetKey,
+			requestComposerFocus,
 		],
 	);
 
-	const handleSwitchOrganization = (organizationId: string) => {
-		setSheetOpen(false);
-		switchOrganization(organizationId);
-	};
+	const sortOption = SORT_OPTIONS.find((option) => option.value === sort);
+	const sortLabel = sortOption ? i18n._(sortOption.label) : "";
 
 	const scopeBar = (
 		<ScopeBar
+			scope={cloudScope ? "cloud" : "host"}
 			hostName={selectedHost?.name ?? null}
 			hostOnline={selectedHost?.isOnline ?? false}
-			sortLabel={
-				SORT_OPTIONS.find((option) => option.value === sort)?.label ?? ""
-			}
-			onPressHost={() => {
+			sortLabel={sortLabel}
+			onPressScope={() => {
 				void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-				router.push("/(authenticated)/(home)/filter/host");
+				router.push("/(authenticated)/(home)/filter/scope");
 			}}
 			onPressSort={() => {
 				void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 				router.push("/(authenticated)/(home)/filter/sort");
 			}}
 		/>
-	);
-
-	// Search lives in the page, not the native header: activating a
-	// UISearchController on iOS 26 lays an invisible view over the screen's
-	// content that swallows every touch — results can't be tapped and search
-	// won't dismiss (unfixed through rns 4.27 / iOS 26.5).
-	const listHeader = (
-		<>
-			<View className="px-4 pb-1 pt-1">
-				<View className="relative justify-center">
-					<View className="absolute left-3 z-10">
-						<Icon
-							as={Search}
-							className="text-muted-foreground size-4"
-							strokeWidth={2}
-						/>
-					</View>
-					<Input
-						autoCapitalize="none"
-						autoCorrect={false}
-						className="rounded-full pl-9"
-						clearButtonMode="always"
-						returnKeyType="search"
-						onChangeText={setSearchQuery}
-						placeholder="Search workspaces"
-						value={searchQuery}
-					/>
-				</View>
-			</View>
-			{scopeBar}
-		</>
 	);
 
 	return (
@@ -616,13 +529,30 @@ export function HomeScreen() {
 				logo={activeOrganization?.logo}
 				onPress={() => {
 					void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-					setSheetOpen(true);
+					router.push("/(authenticated)/(home)/organizations");
 				}}
 			/>
-			{selectedHost &&
-			!selectedHost.isOnline &&
-			cloudReady &&
-			cloudItems.length === 0 ? (
+			{/* Search opens as a sheet rather than a search bar in this header: on
+			    a root screen a UISearchController on iOS 26 lays an invisible view
+			    over the content that swallows every touch (#6659); on the sheet's
+			    own header the same bar works. Hidden while the host is
+			    offline — its list isn't shown, so there is nothing to search. */}
+			{!cloudScope && selectedHost && !selectedHost.isOnline ? null : (
+				<Stack.Toolbar placement="right">
+					<Stack.Toolbar.Button
+						icon="magnifyingglass"
+						accessibilityLabel={t({
+							id: "mobile.home.searchWorkspaces",
+							message: "Search workspaces",
+						})}
+						onPress={() => {
+							void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+							router.push("/(authenticated)/(home)/search");
+						}}
+					/>
+				</Stack.Toolbar>
+			)}
+			{!cloudScope && selectedHost && !selectedHost.isOnline ? (
 				<View
 					className="bg-background flex-1"
 					style={{
@@ -649,7 +579,7 @@ export function HomeScreen() {
 					extraData={renderItem}
 					keyExtractor={homeListItemKey}
 					renderItem={renderItem}
-					ListHeaderComponent={listHeader}
+					ListHeaderComponent={scopeBar}
 					viewabilityConfig={VIEWABILITY_CONFIG}
 					onViewableItemsChanged={onViewableItemsChanged}
 					refreshControl={
@@ -659,9 +589,15 @@ export function HomeScreen() {
 						isReady && cloudReady && hasHydrated && !isLoadingOrganizations ? (
 							<View className="items-center justify-center py-20">
 								<Text className="text-center text-muted-foreground">
-									{searching
-										? "No workspaces match your search"
-										: "No projects on this host yet"}
+									{cloudScope
+										? t({
+												id: "mobile.home.emptyCloud",
+												message: "No cloud workspaces yet",
+											})
+										: t({
+												id: "mobile.home.emptyHost",
+												message: "No projects on this host yet",
+											})}
 								</Text>
 							</View>
 						) : null
@@ -672,14 +608,6 @@ export function HomeScreen() {
 			    the composer has to find a sandbox workspace as readily as a
 			    machine's to start an agent in it. */}
 			<NewChatWidget workspaces={composerWorkspaces} />
-			<OrganizationSwitcherSheet
-				isPresented={sheetOpen}
-				onIsPresentedChange={setSheetOpen}
-				organizations={organizations}
-				activeOrganizationId={activeOrganizationId}
-				onSwitchOrganization={handleSwitchOrganization}
-				width={width}
-			/>
 		</>
 	);
 }

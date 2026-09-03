@@ -1,10 +1,6 @@
 import type { AppRouter } from "@superset/host-service";
-import {
-	createTRPCClient,
-	httpBatchStreamLink,
-	TRPCClientError,
-} from "@trpc/client";
-import superjson from "superjson";
+import { createHostServiceLinks } from "@superset/workspace-client";
+import { createTRPCClient, TRPCClientError } from "@trpc/client";
 import { getHostServiceHeaders } from "./host-service-auth";
 
 const clientCache = new Map<
@@ -23,19 +19,10 @@ export function getHostServiceClientByUrl(hostUrl: string): HostServiceClient {
 	if (cached) return cached;
 
 	const client = createTRPCClient<AppRouter>({
-		links: [
-			// Streaming batch link: same-tick calls share one HTTP request and
-			// one CORS preflight, but each result streams as soon as it's ready
-			// — no slowest-in-batch latency (the reason #3879 unbatched the old
-			// buffering httpBatchLink). All renderer clients share Chromium's
-			// 6-connections-per-origin pool with every other host-service
-			// request, so sockets are the scarce resource here.
-			httpBatchStreamLink({
-				url: `${hostUrl}/trpc`,
-				transformer: superjson,
-				headers: () => getHostServiceHeaders(hostUrl),
-			}),
-		],
+		links: createHostServiceLinks({
+			url: `${hostUrl}/trpc`,
+			headers: () => getHostServiceHeaders(hostUrl),
+		}),
 	});
 
 	clientCache.set(hostUrl, client);

@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import { toast } from "@superset/ui/sonner";
 import { workspaceTrpc } from "@superset/workspace-client";
 import { useCallback } from "react";
@@ -17,6 +18,7 @@ export interface OpenInExternalEditorOptions {
 }
 
 export function useOpenInExternalEditor(workspaceId: string) {
+	const { t } = useLingui();
 	const { machineId } = useLocalHostService();
 	const { workspaces } = useHostWorkspaces();
 	const workspaceRow = workspaces.find((w) => w.id === workspaceId);
@@ -34,7 +36,12 @@ export function useOpenInExternalEditor(workspaceId: string) {
 	return useCallback(
 		(path: string, opts?: OpenInExternalEditorOptions) => {
 			if (workspaceRow?.hostId !== machineId) {
-				toast.error("Can't open remote workspace paths in an external editor");
+				toast.error(
+					t({
+						id: "workspace.externalEditor.remotePathsUnsupported",
+						message: "Can't open remote workspace paths in an external editor",
+					}),
+				);
 				return;
 			}
 			if (opts?.defaultApp) {
@@ -57,9 +64,14 @@ export function useOpenInExternalEditor(workspaceId: string) {
 				})
 				.catch((error) => {
 					console.error("Failed to open in external editor:", error);
-					toast.error("Failed to open in external editor");
+					toast.error(
+						t({
+							id: "workspace.externalEditor.openFailed",
+							message: "Failed to open in external editor",
+						}),
+					);
 				});
 		},
-		[workspaceRow, machineId, projectId, worktreePath, v2PreferredApp],
+		[workspaceRow, machineId, projectId, t, worktreePath, v2PreferredApp],
 	);
 }

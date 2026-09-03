@@ -1,6 +1,9 @@
+import { Trans, useLingui } from "@lingui/react/macro";
 import {
 	getAgentEffortSupport,
+	getAgentEfforts,
 	getAgentModelSupport,
+	getAgentModeSupport,
 } from "@superset/shared/agent-models";
 import { sanitizeUserBranchName } from "@superset/shared/workspace-launch";
 import {
@@ -31,13 +34,16 @@ import { IssueLinkCommand } from "renderer/components/IssueLinkCommand";
 import { LinkedIssuePill } from "renderer/components/LinkedIssuePill";
 import { MarkdownEditor } from "renderer/components/MarkdownEditor";
 import { resolveHostUrl } from "renderer/hooks/host-service/useHostTargetUrl";
+import { useActiveOrganizationId } from "renderer/hooks/useActiveOrganizationId";
 import { useAgentEffortPreference } from "renderer/hooks/useAgentEffortPreference";
 import { useAgentLaunchPreferences } from "renderer/hooks/useAgentLaunchPreferences";
 import { useAgentModelPreference } from "renderer/hooks/useAgentModelPreference";
+import { useAgentModePreference } from "renderer/hooks/useAgentModePreference";
 import { useRelayUrl } from "renderer/hooks/useRelayUrl";
 import { useV2AgentChoices } from "renderer/hooks/useV2AgentChoices";
+import { CLOUD_AGENT_CHOICES } from "renderer/hooks/useV2AgentChoices/cloud-agent-choices";
 import { PLATFORM } from "renderer/hotkeys";
-import { authClient } from "renderer/lib/auth-client";
+import { cloudTrpc } from "renderer/lib/cloud-trpc";
 import { showHostServiceUnavailableToast } from "renderer/lib/host-service-unavailable";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { useNewWorkspaceModalOpen } from "renderer/stores/new-workspace-modal";
@@ -49,6 +55,7 @@ import { CLOUD_HOST_ID } from "../components/DevicePicker/DevicePicker";
 import { useWorkspaceHostOptions } from "../components/DevicePicker/hooks/useWorkspaceHostOptions";
 import { AttachmentButtons } from "./components/AttachmentButtons";
 import { CompareBaseBranchPicker } from "./components/CompareBaseBranchPicker";
+import { EnvironmentPickerPill } from "./components/EnvironmentPickerPill";
 import { GitHubIssueLinkCommand } from "./components/GitHubIssueLinkCommand";
 import { LinkedGitHubIssuePill } from "./components/LinkedGitHubIssuePill";
 import { LinkedPRPill } from "./components/LinkedPRPill";
@@ -66,6 +73,7 @@ import {
 import {
 	AGENT_STORAGE_KEY,
 	EFFORT_STORAGE_KEY,
+	MODE_STORAGE_KEY,
 	MODEL_STORAGE_KEY,
 	PILL_BUTTON_CLASS,
 	type ProjectOption,
@@ -89,6 +97,7 @@ export function PromptGroup({
 	isSessionSelected = false,
 	onSelectProject,
 }: PromptGroupProps) {
+	const { t } = useLingui();
 	const modKey = PLATFORM === "mac" ? "⌘" : "Ctrl";
 	// The markdown editor is uncontrolled after mount, so inserting a history
 	// prompt bumps this seed to remount it with the new content (same pattern
@@ -102,8 +111,7 @@ export function PromptGroup({
 	const hostService = useLocalHostService();
 	const { activeHostUrl, machineId } = hostService;
 	const relayUrl = useRelayUrl();
-	const { data: session } = authClient.useSession();
-	const activeOrganizationId = session?.session?.activeOrganizationId;
+	const activeOrganizationId = useActiveOrganizationId();
 	const needsSetup = selectedProject?.needsSetup === true;
 	const persistedBaseBranchDefault = useV2WorkspaceCreateDefaultsStore(
 		(state) =>
@@ -156,6 +164,15 @@ export function PromptGroup({
 		linkedPR,
 	} = draft;
 
+	const environmentsQuery = cloudTrpc.environment.list.useQuery(
+		{ organizationId: activeOrganizationId ?? "" },
+		{ enabled: hostId === CLOUD_HOST_ID && !!activeOrganizationId },
+	);
+	const environmentOptions = environmentsQuery.data ?? [];
+	const selectedEnvironment =
+		environmentOptions.find((row) => row.id === draft.environmentId) ??
+		environmentOptions[0];
+
 	// ── Agent configs (v2 host_agent_configs) ───────────────────────
 	// Scoped to the launch host, not the local active host: agent UUIDs only
 	// exist on the host that owns them, so picking from the local list while
@@ -163,6 +180,9 @@ export function PromptGroup({
 	// recognize.
 	const launchHostUrl = useMemo(() => {
 		const id = draft.hostId ?? machineId;
+		// "cloud" is a sentinel, not a host: resolving it would query a relay
+		// address for a machine that does not exist.
+		if (id === CLOUD_HOST_ID) return null;
 		if (!id || !activeOrganizationId) return null;
 		return (
 			resolveHostUrl({
@@ -174,8 +194,12 @@ export function PromptGroup({
 			}) ?? null
 		);
 	}, [draft.hostId, machineId, activeHostUrl, activeOrganizationId, relayUrl]);
-	const { agents: v2Agents, isFetched: v2AgentsFetched } =
+	const { agents: hostAgents, isFetched: hostAgentsFetched } =
 		useV2AgentChoices(launchHostUrl);
+	// A cloud workspace has no host to ask, so it offers the built-in presets;
+	// custom agents follow once they live in the cloud (SUPER-2127).
+	const v2Agents = hostId === CLOUD_HOST_ID ? CLOUD_AGENT_CHOICES : hostAgents;
+	const v2AgentsFetched = hostId === CLOUD_HOST_ID || hostAgentsFetched;
 	const selectableAgentIds = useMemo(
 		() => v2Agents.map((agent) => agent.id),
 		[v2Agents],
@@ -190,11 +214,12 @@ export function PromptGroup({
 		});
 
 	// ── Model picker (per agent preset) ──────────────────────────────
-	// `iconId` carries the presetId for v2 agents ("superset" for chat).
-	const selectedPresetId = useMemo(
-		() => v2Agents.find((agent) => agent.id === selectedAgent)?.iconId ?? null,
-		[v2Agents, selectedAgent],
-	);
+	// `launchPresetId` carries executable-aware capability metadata; Superset
+	// chat has no host config and falls back to its icon id.
+	const selectedPresetId = useMemo(() => {
+		const agent = v2Agents.find((candidate) => candidate.id === selectedAgent);
+		return agent?.launchPresetId ?? agent?.presetId ?? agent?.iconId ?? null;
+	}, [v2Agents, selectedAgent]);
 	const modelSupport = selectedPresetId
 		? getAgentModelSupport(selectedPresetId)
 		: undefined;
@@ -208,6 +233,28 @@ export function PromptGroup({
 	const { selectedEffort, setSelectedEffort } = useAgentEffortPreference(
 		EFFORT_STORAGE_KEY,
 		effortSupport ? selectedPresetId : null,
+	);
+	// Codex's top two efforts only exist on its GPT-5.6 models, so the offered
+	// list follows the model picker. A remembered effort the current model
+	// rejects stays stored but shows (and launches) as the agent default.
+	const effortOptions = useMemo(
+		() =>
+			selectedPresetId
+				? getAgentEfforts(selectedPresetId, selectedModel ?? undefined)
+				: [],
+		[selectedPresetId, selectedModel],
+	);
+	const effortForLaunch = effortOptions.some(
+		(option) => option.id === selectedEffort,
+	)
+		? selectedEffort
+		: null;
+	const modeSupport = selectedPresetId
+		? getAgentModeSupport(selectedPresetId)
+		: undefined;
+	const { selectedMode, setSelectedMode } = useAgentModePreference(
+		MODE_STORAGE_KEY,
+		modeSupport ? selectedPresetId : null,
 	);
 
 	// Promote the placeholder "none" → first configured agent whenever the
@@ -311,17 +358,32 @@ export function PromptGroup({
 	// fall into a toast.
 	const { otherHosts } = useWorkspaceHostOptions();
 	const submitBlocker = useMemo<string | null>(() => {
-		if (!projectId && !draft.isSession) return "Select a project";
+		if (!projectId && !draft.isSession)
+			return t({
+				id: "dashboard.newWorkspaceModal.promptGroup.blockerSelectProject",
+				message: "Select a project",
+			});
 		const selectedHostId = draft.hostId ?? machineId;
 		// A cloud workspace is provisioned on submit, so there is no host whose
 		// readiness could block it.
 		if (selectedHostId === CLOUD_HOST_ID) return null;
-		if (!selectedHostId) return "No active host";
+		if (!selectedHostId)
+			return t({
+				id: "dashboard.newWorkspaceModal.promptGroup.blockerNoActiveHost",
+				message: "No active host",
+			});
 		if (selectedHostId !== machineId) {
 			const remote = otherHosts.find((h) => h.id === selectedHostId);
-			if (!remote?.isOnline) return "Host is offline";
+			if (!remote?.isOnline)
+				return t({
+					id: "dashboard.newWorkspaceModal.promptGroup.blockerHostOffline",
+					message: "Host is offline",
+				});
 		} else if (!activeHostUrl) {
-			return "Host service is not running";
+			return t({
+				id: "dashboard.newWorkspaceModal.promptGroup.blockerHostServiceNotRunning",
+				message: "Host service is not running",
+			});
 		}
 		return null;
 	}, [
@@ -331,6 +393,7 @@ export function PromptGroup({
 		machineId,
 		activeHostUrl,
 		otherHosts,
+		t,
 	]);
 
 	// ── Linked-context prefetch ──────────────────────────────────────
@@ -346,7 +409,8 @@ export function PromptGroup({
 		projectId,
 		selectedAgent,
 		modelSupport ? selectedModel : null,
-		effortSupport ? selectedEffort : null,
+		effortForLaunch,
+		modeSupport ? selectedMode : null,
 		uploadAttachments,
 		promptContext,
 	);
@@ -358,7 +422,7 @@ export function PromptGroup({
 		if (submitBlocker) {
 			if ((draft.hostId ?? machineId) === machineId && !activeHostUrl) {
 				showHostServiceUnavailableToast(hostService, {
-					action: "create the workspace",
+					action: "createWorkspace",
 				});
 			} else {
 				toast.error(submitBlocker);
@@ -405,7 +469,10 @@ export function PromptGroup({
 			<div className="flex items-center">
 				<Input
 					className="border-none bg-transparent dark:bg-transparent shadow-none text-base font-medium px-0 h-auto focus-visible:ring-0 placeholder:text-muted-foreground/40 min-w-0 flex-1"
-					placeholder="Workspace name (optional)"
+					placeholder={t({
+						id: "dashboard.newWorkspaceModal.promptGroup.workspaceNamePlaceholder",
+						message: "Workspace name (optional)",
+					})}
 					value={workspaceName}
 					onChange={(e) =>
 						updateDraft({
@@ -423,7 +490,13 @@ export function PromptGroup({
 						className={cn(
 							"border-none bg-transparent dark:bg-transparent shadow-none text-xs font-mono text-muted-foreground/60 px-0 h-auto focus-visible:ring-0 placeholder:text-muted-foreground/30 focus:text-muted-foreground text-right placeholder:text-right overflow-hidden text-ellipsis",
 						)}
-						placeholder={branchPreview || "branch name"}
+						placeholder={
+							branchPreview ||
+							t({
+								id: "dashboard.newWorkspaceModal.promptGroup.branchNamePlaceholder",
+								message: "branch name",
+							})
+						}
 						value={branchName}
 						onChange={(e) =>
 							updateDraft({
@@ -451,7 +524,10 @@ export function PromptGroup({
 								type="button"
 								variant="ghost"
 								size="icon"
-								aria-label="Update naming instructions"
+								aria-label={t({
+									id: "dashboard.newWorkspaceModal.promptGroup.updateNamingInstructionsAria",
+									message: "Update naming instructions",
+								})}
 								className="ml-2 size-6 shrink-0 text-muted-foreground"
 								onClick={handleGoToNamingInstructions}
 							>
@@ -459,19 +535,27 @@ export function PromptGroup({
 							</Button>
 						</TooltipTrigger>
 						<TooltipContent>
-							Update naming instructions for {selectedProject.name}
+							<Trans id="dashboard.newWorkspaceModal.promptGroup.updateNamingInstructions">
+								Update naming instructions for {selectedProject.name}
+							</Trans>
 						</TooltipContent>
 					</Tooltip>
 				)}
 				<PromptHistoryCommand
 					onSelect={applyPrompt}
-					tooltipLabel="Previous prompts"
+					tooltipLabel={t({
+						id: "dashboard.newWorkspaceModal.promptGroup.previousPrompts",
+						message: "Previous prompts",
+					})}
 				>
 					<Button
 						type="button"
 						variant="ghost"
 						size="icon"
-						aria-label="Previous prompts"
+						aria-label={t({
+							id: "dashboard.newWorkspaceModal.promptGroup.previousPrompts",
+							message: "Previous prompts",
+						})}
 						className="ml-2 size-6 shrink-0 text-muted-foreground"
 					>
 						<HistoryIcon className="size-3.5" />
@@ -485,6 +569,7 @@ export function PromptGroup({
 				multiple
 				maxFiles={5}
 				maxFileSize={10 * 1024 * 1024}
+				onError={(error) => toast.error(error.message)}
 				className="[&>[data-slot=input-group]]:rounded-[13px] [&>[data-slot=input-group]]:border-[0.5px] [&>[data-slot=input-group]]:shadow-none [&>[data-slot=input-group]]:bg-foreground/[0.02]"
 			>
 				{(linkedPR || linkedIssues.length > 0 || visibleFiles.length > 0) && (
@@ -552,7 +637,10 @@ export function PromptGroup({
 					onChange={(markdown) => updateDraft({ prompt: markdown })}
 					onPasteFiles={(files) => attachments.add(files)}
 					autoFocus={promptSeed > 0 || prompt ? "end" : "start"}
-					placeholder="What do you want to do?"
+					placeholder={t({
+						id: "dashboard.newWorkspaceModal.promptGroup.promptPlaceholder",
+						message: "What do you want to do?",
+					})}
 					className="flex flex-col min-h-[100px] max-h-[200px] px-3 pt-3"
 					editorClassName="overflow-y-auto text-sm"
 					features={{
@@ -567,13 +655,19 @@ export function PromptGroup({
 						<AgentSelect<WorkspaceCreateAgent>
 							agents={v2Agents}
 							value={selectedAgent}
-							placeholder="No agent"
+							placeholder={t({
+								id: "dashboard.newWorkspaceModal.promptGroup.noAgent",
+								message: "No agent",
+							})}
 							onValueChange={setSelectedAgent}
 							onBeforeConfigureAgents={closeModal}
 							triggerClassName={`${PILL_BUTTON_CLASS} px-1.5 gap-1 text-foreground w-auto max-w-[160px]`}
 							iconClassName="size-3 object-contain"
 							allowNone
-							noneLabel="No agent"
+							noneLabel={t({
+								id: "dashboard.newWorkspaceModal.promptGroup.noAgent",
+								message: "No agent",
+							})}
 							noneValue="none"
 						/>
 						{modelSupport && (
@@ -581,16 +675,34 @@ export function PromptGroup({
 								models={modelSupport.models}
 								value={selectedModel}
 								onValueChange={setSelectedModel}
-								defaultLabel="Default model"
+								defaultLabel={t({
+									id: "dashboard.newWorkspaceModal.promptGroup.defaultModel",
+									message: "Default model",
+								})}
 								triggerClassName={`${PILL_BUTTON_CLASS} px-1.5 gap-1 text-foreground w-auto max-w-[160px]`}
 							/>
 						)}
 						{effortSupport && (
 							<AgentModelSelect
-								models={effortSupport.efforts}
+								models={effortOptions}
 								value={selectedEffort}
 								onValueChange={setSelectedEffort}
-								defaultLabel="Default effort"
+								defaultLabel={t({
+									id: "dashboard.newWorkspaceModal.promptGroup.defaultEffort",
+									message: "Default effort",
+								})}
+								triggerClassName={`${PILL_BUTTON_CLASS} px-1.5 gap-1 text-foreground w-auto max-w-[160px]`}
+							/>
+						)}
+						{modeSupport && (
+							<AgentModelSelect
+								models={modeSupport.modes}
+								value={selectedMode}
+								onValueChange={setSelectedMode}
+								defaultLabel={t({
+									id: "dashboard.newWorkspaceModal.promptGroup.directMode",
+									message: "Direct mode",
+								})}
 								triggerClassName={`${PILL_BUTTON_CLASS} px-1.5 gap-1 text-foreground w-auto max-w-[160px]`}
 							/>
 						)}
@@ -600,10 +712,16 @@ export function PromptGroup({
 							linearIssueTrigger={
 								<IssueLinkCommand
 									onSelect={addLinkedIssue}
-									tooltipLabel="Link issue"
+									tooltipLabel={t({
+										id: "dashboard.newWorkspaceModal.promptGroup.linkIssue",
+										message: "Link issue",
+									})}
 								>
 									<PromptInputButton
-										aria-label="Link issue"
+										aria-label={t({
+											id: "dashboard.newWorkspaceModal.promptGroup.linkIssue",
+											message: "Link issue",
+										})}
 										className={`${PILL_BUTTON_CLASS} w-[22px]`}
 									>
 										<SiLinear className="size-3.5" />
@@ -622,10 +740,16 @@ export function PromptGroup({
 									}
 									projectId={projectId}
 									hostId={hostId}
-									tooltipLabel="Link GitHub issue"
+									tooltipLabel={t({
+										id: "dashboard.newWorkspaceModal.promptGroup.linkGitHubIssue",
+										message: "Link GitHub issue",
+									})}
 								>
 									<PromptInputButton
-										aria-label="Link GitHub issue"
+										aria-label={t({
+											id: "dashboard.newWorkspaceModal.promptGroup.linkGitHubIssue",
+											message: "Link GitHub issue",
+										})}
 										className={`${PILL_BUTTON_CLASS} w-[22px]`}
 									>
 										<GoIssueOpened className="size-3.5" />
@@ -637,10 +761,16 @@ export function PromptGroup({
 									onSelect={setLinkedPR}
 									projectId={projectId}
 									hostId={hostId}
-									tooltipLabel="Link pull request"
+									tooltipLabel={t({
+										id: "dashboard.newWorkspaceModal.promptGroup.linkPullRequest",
+										message: "Link pull request",
+									})}
 								>
 									<PromptInputButton
-										aria-label="Link pull request"
+										aria-label={t({
+											id: "dashboard.newWorkspaceModal.promptGroup.linkPullRequest",
+											message: "Link pull request",
+										})}
 										className={`${PILL_BUTTON_CLASS} w-[22px]`}
 									>
 										<LuGitPullRequest className="size-3.5" />
@@ -676,12 +806,23 @@ export function PromptGroup({
 							updateDraft({ hostId: next });
 						}}
 					/>
-					<ProjectPickerPill
-						selectedProject={selectedProject}
-						projects={recentProjects}
-						isSessionSelected={isSessionSelected}
-						onSelectProject={onSelectProject}
-					/>
+					{hostId !== CLOUD_HOST_ID && (
+						<ProjectPickerPill
+							selectedProject={selectedProject}
+							projects={recentProjects}
+							isSessionSelected={isSessionSelected}
+							onSelectProject={onSelectProject}
+						/>
+					)}
+					{hostId === CLOUD_HOST_ID && (
+						<EnvironmentPickerPill
+							selectedEnvironment={selectedEnvironment}
+							environments={environmentOptions}
+							onSelectEnvironment={(next) =>
+								updateDraft({ environmentId: next })
+							}
+						/>
+					)}
 					<AnimatePresence mode="wait" initial={false}>
 						{linkedPR ? (
 							<motion.span
@@ -693,7 +834,9 @@ export function PromptGroup({
 								className="flex items-center gap-1 text-xs text-muted-foreground"
 							>
 								<LuGitPullRequest className="size-3 shrink-0" />
-								based off PR #{linkedPR.prNumber}
+								<Trans id="dashboard.newWorkspaceModal.promptGroup.basedOffPr">
+									based off PR #{linkedPR.prNumber}
+								</Trans>
 							</motion.span>
 						) : (
 							<motion.div
@@ -720,7 +863,9 @@ export function PromptGroup({
 							className="h-6 px-2 text-[11px] text-amber-500 hover:text-amber-500"
 							onClick={handleGoToSetup}
 						>
-							Set up project…
+							<Trans id="dashboard.newWorkspaceModal.promptGroup.setUpProject">
+								Set up project…
+							</Trans>
 						</Button>
 					) : (
 						<span className="text-[11px] text-muted-foreground/50">

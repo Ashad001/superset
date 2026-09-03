@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import * as realOs from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const TEST_ROOT = path.join(
 	realOs.tmpdir(),
@@ -65,6 +66,7 @@ const {
 	createDroidSettingsJson,
 	createDroidWrapper,
 	createMastraWrapper,
+	createOmpExtension,
 	createPiExtension,
 	getClaudeGlobalSettingsJsonContent,
 	getClaudeManagedHookCommand,
@@ -77,6 +79,11 @@ const {
 	getAmpPluginContent,
 	getGeminiSettingsJsonContent,
 	getMastraHooksJsonContent,
+	getOpenCodePluginContent,
+	getOmpExtensionContent,
+	getOmpExtensionPath,
+	OMP_EXTENSION_MARKER,
+	removeOmpExtension,
 	getPiExtensionContent,
 	getPiExtensionPath,
 	PI_EXTENSION_MARKER,
@@ -92,6 +99,103 @@ const managedClaudeHookCommand = getClaudeManagedHookCommand();
 const managedDroidHookCommand = getManagedNotifyHookCommand("droid");
 const managedCodexHookCommand = getManagedNotifyHookCommand("codex");
 const managedMastraHookCommand = getManagedNotifyHookCommand("mastracode");
+
+describe("agent-wrappers opencode", () => {
+	const originalTerminalId = process.env.SUPERSET_TERMINAL_ID;
+	// Written and imported once. A fresh file per test used to be the way to get
+	// a fresh module, but only the first dynamic import out of this directory
+	// ever resolved — the rest died on "Cannot find module" for a file that was
+	// definitely on disk. Nothing here needs a fresh module anyway: the plugin's
+	// re-entry guard lives on `globalThis`, not in module scope, and `beforeEach`
+	// clears it, so one cached import gives every test its own hooks.
+	/** The plugin hands back a map of OpenCode hooks, keyed by event name. */
+	type OpenCodeHooks = Record<
+		string,
+		(...args: unknown[]) => Promise<unknown> | unknown
+	>;
+	let pluginModule: Promise<{
+		SupersetNotifyPlugin: (input: unknown) => Promise<OpenCodeHooks>;
+	}>;
+
+	const loadOpenCodePlugin = async () => {
+		if (!pluginModule) {
+			mkdirSync(TEST_ROOT, { recursive: true });
+			const pluginPath = path.join(TEST_ROOT, "opencode-notify.mjs");
+			writeFileSync(pluginPath, getOpenCodePluginContent("/tmp/notify.sh"));
+			pluginModule = import(pathToFileURL(pluginPath).href);
+		}
+		return pluginModule;
+	};
+
+	beforeEach(() => {
+		delete (
+			globalThis as typeof globalThis & {
+				__supersetOpencodeNotifyPluginV9?: boolean;
+			}
+		).__supersetOpencodeNotifyPluginV9;
+	});
+
+	afterEach(() => {
+		if (originalTerminalId === undefined) {
+			delete process.env.SUPERSET_TERMINAL_ID;
+		} else {
+			process.env.SUPERSET_TERMINAL_ID = originalTerminalId;
+		}
+	});
+
+	it.each([
+		"permission.asked",
+		"question.asked",
+	])("notifies for the current %s event", async (eventType) => {
+		process.env.SUPERSET_TERMINAL_ID = "terminal-1";
+		const { SupersetNotifyPlugin } = await loadOpenCodePlugin();
+		const notifications: string[] = [];
+		const hooks = await SupersetNotifyPlugin({
+			$: (
+				_parts: TemplateStringsArray,
+				_notifyPath: string,
+				payload: string,
+			) => {
+				notifications.push(JSON.parse(payload).hook_event_name);
+			},
+			client: {
+				session: {
+					list: async () => ({
+						data: [{ id: "root-session" }],
+					}),
+				},
+			},
+		});
+
+		await hooks.event({
+			event: {
+				type: eventType,
+				properties: { sessionID: "root-session" },
+			},
+		});
+
+		expect(notifications).toEqual(["PermissionRequest"]);
+	});
+
+	it("retains the legacy permission.ask notification hook", async () => {
+		process.env.SUPERSET_TERMINAL_ID = "terminal-1";
+		const { SupersetNotifyPlugin } = await loadOpenCodePlugin();
+		const notifications: string[] = [];
+		const hooks = await SupersetNotifyPlugin({
+			$: (
+				_parts: TemplateStringsArray,
+				_notifyPath: string,
+				payload: string,
+			) => {
+				notifications.push(JSON.parse(payload).hook_event_name);
+			},
+		});
+
+		await hooks["permission.ask"]({}, { status: "ask" });
+
+		expect(notifications).toEqual(["PermissionRequest"]);
+	});
+});
 
 describe("agent-wrappers copilot", () => {
 	beforeEach(() => {
@@ -155,12 +259,12 @@ describe("agent-wrappers copilot", () => {
 		const wrapper = readFileSync(wrapperPath, "utf-8");
 
 		expect(wrapper).toContain(
-			`"$REAL_BIN" "\${_superset_codex_args[@]}" --enable hooks "$@"`,
+			`"$REAL_BIN" "\${_superset_codex_args[@]}" --enable hooks \${_superset_bypass_hook_trust:+"$_superset_bypass_hook_trust"} "$@"`,
 		);
 		expect(wrapper).not.toContain("-c 'notify=");
 		expect(wrapper).toContain('export SUPERSET_AGENT_ID="codex"');
 
-		expect(wrapper).toContain("# Superset agent-wrapper v3");
+		expect(wrapper).toContain("# Superset agent-wrapper v4");
 
 		// Native hooks remain enabled, but the process-scoped TUI session log is
 		// the reliable Start signal for installed Codex TUI builds.
@@ -173,7 +277,11 @@ describe("agent-wrappers copilot", () => {
 		expect(wrapper).toContain(
 			'projects={\\"$_superset_workspace_path_toml\\"={trust_level=\\"trusted\\"}}',
 		);
-		expect(wrapper).not.toContain("export CODEX_HOME=");
+		// The Usage-tab default resolver may export CODEX_HOME dynamically from
+		// the pointer file, but the wrapper must never hardcode a home.
+		expect(wrapper).toContain("state/default-codex-home");
+		expect(wrapper).toContain('export CODEX_HOME="$superset_default_account"');
+		expect(wrapper).not.toContain('export CODEX_HOME="$HOME');
 		expect(wrapper).not.toContain("rollout-*.jsonl");
 		expect(wrapper).not.toContain("_superset_sessions_dir");
 		expect(wrapper).not.toContain("$" + "{CODEX_HOME:-$HOME/.codex}");
@@ -240,6 +348,7 @@ exit 0
 				`projects={"${workspacePath}"={trust_level="trusted"}}`,
 				"--enable",
 				"hooks",
+				"--dangerously-bypass-hook-trust",
 			].join("\n")}\n`,
 		);
 	});
@@ -274,7 +383,87 @@ exit 0
 		});
 
 		expect(readFileSync(argsFile, "utf-8")).toBe(
-			`${["--enable", "hooks", "exec", "Reply with exactly OK."].join("\n")}\n`,
+			`${[
+				"--enable",
+				"hooks",
+				"--dangerously-bypass-hook-trust",
+				"exec",
+				"Reply with exactly OK.",
+			].join("\n")}\n`,
+		);
+	});
+
+	it("does not duplicate the hook-trust bypass when the launch command already passes it", () => {
+		const realBinDir = path.join(TEST_ROOT, "real-bin");
+		const realCodex = path.join(realBinDir, "codex");
+		const wrapperPath = path.join(TEST_BIN_DIR, "codex");
+		const argsFile = path.join(TEST_ROOT, "codex-bypass-args.txt");
+
+		mkdirSync(realBinDir, { recursive: true });
+		writeFileSync(
+			realCodex,
+			`#!/bin/bash
+printf '%s\n' "$@" > "${argsFile}"
+exit 0
+`,
+			{ mode: 0o755 },
+		);
+		chmodSync(realCodex, 0o755);
+
+		createCodexWrapper();
+
+		// The builtin preset command already carries the flag; codex errors on a
+		// repeated boolean flag, so the wrapper must not append a second one.
+		execFileSync(
+			wrapperPath,
+			[
+				"--dangerously-bypass-approvals-and-sandbox",
+				"--dangerously-bypass-hook-trust",
+			],
+			{
+				env: {
+					...process.env,
+					PATH: `${TEST_BIN_DIR}:${realBinDir}:${process.env.PATH || ""}`,
+					SUPERSET_WORKSPACE_PATH: "",
+					SUPERSET_TERMINAL_ID: "terminal-1",
+				},
+				encoding: "utf-8",
+			},
+		);
+
+		expect(readFileSync(argsFile, "utf-8")).toBe(
+			`${[
+				"--enable",
+				"hooks",
+				"--dangerously-bypass-approvals-and-sandbox",
+				"--dangerously-bypass-hook-trust",
+			].join("\n")}\n`,
+		);
+
+		// A prompt that merely mentions the flag after `--` is text, not a flag —
+		// the real bypass must still be appended.
+		execFileSync(
+			wrapperPath,
+			["--", "explain what --dangerously-bypass-hook-trust does"],
+			{
+				env: {
+					...process.env,
+					PATH: `${TEST_BIN_DIR}:${realBinDir}:${process.env.PATH || ""}`,
+					SUPERSET_WORKSPACE_PATH: "",
+					SUPERSET_TERMINAL_ID: "terminal-1",
+				},
+				encoding: "utf-8",
+			},
+		);
+
+		expect(readFileSync(argsFile, "utf-8")).toBe(
+			`${[
+				"--enable",
+				"hooks",
+				"--dangerously-bypass-hook-trust",
+				"--",
+				"explain what --dangerously-bypass-hook-trust does",
+			].join("\n")}\n`,
 		);
 	});
 
@@ -1239,8 +1428,10 @@ describe("agent-wrappers codex hooks.json", () => {
 		const expectedCommand = managedCodexHookCommand;
 		for (const eventName of [
 			"SessionStart",
+			"SessionEnd",
 			"UserPromptSubmit",
 			"Stop",
+			"Interrupt",
 		] as const) {
 			const hooks = parsed.hooks[eventName];
 			expect(Array.isArray(hooks)).toBe(true);
@@ -1352,8 +1543,14 @@ describe("agent-wrappers codex hooks.json", () => {
 		).toBe(true);
 
 		const expectedManagedCommand = managedCodexHookCommand;
-		// Adds managed hooks for SessionStart, UserPromptSubmit, Stop
-		for (const eventName of ["SessionStart", "UserPromptSubmit", "Stop"]) {
+		// Adds managed hooks for session, prompt, completion, and interruption lifecycle events.
+		for (const eventName of [
+			"SessionStart",
+			"SessionEnd",
+			"UserPromptSubmit",
+			"Stop",
+			"Interrupt",
+		]) {
 			expect(
 				parsed.hooks[eventName].some(
 					(def: { hooks: Array<{ command: string }> }) =>
@@ -1438,8 +1635,10 @@ describe("agent-wrappers codex hooks.json", () => {
 		const expectedManagedCommand = managedCodexHookCommand;
 		for (const eventName of [
 			"SessionStart",
+			"SessionEnd",
 			"UserPromptSubmit",
 			"Stop",
+			"Interrupt",
 		] as const) {
 			const hooks = parsed.hooks[eventName];
 			expect(Array.isArray(hooks)).toBe(true);
@@ -1910,11 +2109,6 @@ describe("agent-wrappers pi", () => {
 		expect(content).not.toContain("{{MARKER}}");
 	});
 
-	it("renders pi extension content as a valid extension default-export shape", () => {
-		const content = getPiExtensionContent();
-		expect(content).toContain("export default function");
-	});
-
 	it("installs the pi extension into the global ~/.pi/agent/extensions directory", () => {
 		const extensionPath = getPiExtensionPath();
 		expect(extensionPath).toBe(
@@ -2171,5 +2365,151 @@ describe("managed hooks junk tolerance", () => {
 			"junk-string",
 			{ hooks: [{ type: "command", command: "/opt/user-hook.sh" }] },
 		]);
+	});
+});
+
+describe("agent-wrappers omp", () => {
+	let originalOmpCodingAgentDir: string | undefined;
+	let originalPiCodingAgentDir: string | undefined;
+
+	beforeEach(() => {
+		originalOmpCodingAgentDir = process.env.OMP_CODING_AGENT_DIR;
+		originalPiCodingAgentDir = process.env.PI_CODING_AGENT_DIR;
+		mockedHomeDir = path.join(TEST_ROOT, "home");
+		mkdirSync(TEST_BIN_DIR, { recursive: true });
+		mkdirSync(TEST_HOOKS_DIR, { recursive: true });
+		delete process.env.OMP_CODING_AGENT_DIR;
+		delete process.env.PI_CODING_AGENT_DIR;
+	});
+
+	afterEach(() => {
+		if (originalOmpCodingAgentDir === undefined) {
+			delete process.env.OMP_CODING_AGENT_DIR;
+		} else {
+			process.env.OMP_CODING_AGENT_DIR = originalOmpCodingAgentDir;
+		}
+		if (originalPiCodingAgentDir === undefined) {
+			delete process.env.PI_CODING_AGENT_DIR;
+		} else {
+			process.env.PI_CODING_AGENT_DIR = originalPiCodingAgentDir;
+		}
+		rmSync(TEST_ROOT, { recursive: true, force: true });
+	});
+
+	it("renders Oh My Pi extension content with the marker substituted", () => {
+		const content = getOmpExtensionContent();
+		expect(content).toContain(OMP_EXTENSION_MARKER);
+		expect(content).not.toContain("{{MARKER}}");
+	});
+
+	it("renders Oh My Pi extension content as a valid extension default-export shape", () => {
+		const content = getOmpExtensionContent();
+		expect(content).toContain("export default function");
+	});
+
+	it("maps OMP lifecycle events to Superset lifecycle hooks", () => {
+		const content = getOmpExtensionContent();
+		expect(content).toContain('["session_start", "SessionStart"]');
+		expect(content).toContain('["agent_start", "UserPromptSubmit"]');
+		expect(content).toContain('["before_agent_start", "UserPromptSubmit"]');
+		expect(content).toContain('["tool_execution_end", "PostToolUse"]');
+		expect(content).toContain('["agent_end", "Stop"]');
+		expect(content).toContain('["session_end", "SessionEnd"]');
+		expect(content).toContain('["session_shutdown", "Stop"]');
+		expect(content).toContain(
+			"for (const [eventName, hookEventName] of lifecycleMappings)",
+		);
+		expect(content).toContain("pi.on(eventName");
+		expect(content).toContain("fire(hookEventName)");
+		expect(content).toContain('SUPERSET_AGENT_ID: "omp"');
+	});
+
+	it("installs the Oh My Pi extension into the global ~/.omp/agent/extensions directory", () => {
+		const extensionPath = getOmpExtensionPath();
+		expect(extensionPath).toBe(
+			path.join(
+				mockedHomeDir,
+				".omp",
+				"agent",
+				"extensions",
+				"superset-hooks.ts",
+			),
+		);
+
+		createOmpExtension();
+
+		const installed = readFileSync(extensionPath, "utf-8");
+		expect(installed).toContain(OMP_EXTENSION_MARKER);
+		expect(installed).toContain("export default function");
+	});
+
+	it("honors OMP_CODING_AGENT_DIR when locating the Oh My Pi extension", () => {
+		const customAgentDir = path.join(mockedHomeDir, "custom-omp-agent");
+		process.env.OMP_CODING_AGENT_DIR = customAgentDir;
+
+		expect(getOmpExtensionPath()).toBe(
+			path.join(customAgentDir, "extensions", "superset-hooks.ts"),
+		);
+	});
+
+	it("expands leading tildes in OMP_CODING_AGENT_DIR", () => {
+		process.env.OMP_CODING_AGENT_DIR = "~/custom-omp-agent";
+		expect(getOmpExtensionPath()).toBe(
+			path.join(
+				mockedHomeDir,
+				"custom-omp-agent",
+				"extensions",
+				"superset-hooks.ts",
+			),
+		);
+
+		process.env.OMP_CODING_AGENT_DIR = "~\\custom-omp-agent";
+		expect(getOmpExtensionPath()).toBe(
+			path.join(
+				`${mockedHomeDir}\\custom-omp-agent`,
+				"extensions",
+				"superset-hooks.ts",
+			),
+		);
+	});
+
+	it("ignores PI_CODING_AGENT_DIR so pi and omp resolve to distinct extension trees", () => {
+		process.env.PI_CODING_AGENT_DIR = path.join(mockedHomeDir, ".pi", "agent");
+
+		expect(getOmpExtensionPath()).toBe(
+			path.join(
+				mockedHomeDir,
+				".omp",
+				"agent",
+				"extensions",
+				"superset-hooks.ts",
+			),
+		);
+		expect(getOmpExtensionPath()).not.toBe(getPiExtensionPath());
+	});
+
+	it("removes the Superset-owned Oh My Pi extension on teardown", () => {
+		createOmpExtension();
+		const extensionPath = getOmpExtensionPath();
+		expect(existsSync(extensionPath)).toBe(true);
+
+		removeOmpExtension();
+		expect(existsSync(extensionPath)).toBe(false);
+
+		// Second run is a no-op when nothing is installed.
+		removeOmpExtension();
+		expect(existsSync(extensionPath)).toBe(false);
+	});
+
+	it("leaves a user-authored extension file in place on teardown", () => {
+		const extensionPath = getOmpExtensionPath();
+		mkdirSync(path.dirname(extensionPath), { recursive: true });
+		writeFileSync(extensionPath, "export default function userExtension() {}");
+
+		removeOmpExtension();
+
+		expect(readFileSync(extensionPath, "utf-8")).toBe(
+			"export default function userExtension() {}",
+		);
 	});
 });

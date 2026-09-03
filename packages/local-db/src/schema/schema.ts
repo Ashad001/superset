@@ -1,3 +1,4 @@
+import type { InstalledPlugin } from "@superset/shared/plugins";
 import {
 	index,
 	integer,
@@ -201,6 +202,8 @@ export const settings = sqliteTable("settings", {
 		"agent_preset_permissions_migrated_at",
 	),
 	selectedRingtoneId: text("selected_ringtone_id"),
+	// App display language: "auto" or a supported BCP 47 tag; null = auto.
+	language: text("language"),
 	activeOrganizationId: text("active_organization_id"),
 	confirmOnQuit: integer("confirm_on_quit", { mode: "boolean" }),
 	terminalLinkBehavior: text(
@@ -241,6 +244,9 @@ export const settings = sqliteTable("settings", {
 	>(),
 	terminalCursorBlink: integer("terminal_cursor_blink", { mode: "boolean" }),
 	terminalParkedRuntimeCap: integer("terminal_parked_runtime_cap"),
+	terminalCopyOnSelect: integer("terminal_copy_on_select", {
+		mode: "boolean",
+	}),
 	editorFontFamily: text("editor_font_family"),
 	editorFontSize: integer("editor_font_size"),
 	editorLineHeight: real("editor_line_height"),
@@ -250,6 +256,7 @@ export const settings = sqliteTable("settings", {
 	showResourceMonitor: integer("show_resource_monitor", { mode: "boolean" }),
 	worktreeBaseDir: text("worktree_base_dir"),
 	openLinksInApp: integer("open_links_in_app", { mode: "boolean" }),
+	browserHomepageUrl: text("browser_homepage_url"),
 	defaultEditor: text("default_editor").$type<ExternalApp>(),
 	exposeHostServiceViaRelay: integer("expose_host_service_via_relay", {
 		mode: "boolean",
@@ -257,6 +264,10 @@ export const settings = sqliteTable("settings", {
 	disabledAgentHooks: text("disabled_agent_hooks", { mode: "json" }).$type<
 		string[]
 	>(),
+	installedPlugins: text("installed_plugins", { mode: "json" }).$type<
+		InstalledPlugin[]
+	>(),
+	disabledSkills: text("disabled_skills", { mode: "json" }).$type<string[]>(),
 });
 
 export type InsertSettings = typeof settings.$inferInsert;
@@ -309,7 +320,6 @@ export const users = sqliteTable(
 	"users",
 	{
 		id: text("id").primaryKey(),
-		clerk_id: text("clerk_id").notNull().unique(),
 		name: text("name").notNull(),
 		email: text("email").notNull().unique(),
 		avatar_url: text("avatar_url"),
@@ -317,10 +327,7 @@ export const users = sqliteTable(
 		created_at: text("created_at").notNull(),
 		updated_at: text("updated_at").notNull(),
 	},
-	(table) => [
-		index("users_email_idx").on(table.email),
-		index("users_clerk_id_idx").on(table.clerk_id),
-	],
+	(table) => [index("users_email_idx").on(table.email)],
 );
 
 export type InsertUser = typeof users.$inferInsert;
@@ -333,7 +340,6 @@ export const organizations = sqliteTable(
 	"organizations",
 	{
 		id: text("id").primaryKey(),
-		clerk_org_id: text("clerk_org_id").unique(),
 		name: text("name").notNull(),
 		slug: text("slug").notNull().unique(),
 		github_org: text("github_org"),
@@ -341,10 +347,7 @@ export const organizations = sqliteTable(
 		created_at: text("created_at").notNull(),
 		updated_at: text("updated_at").notNull(),
 	},
-	(table) => [
-		index("organizations_slug_idx").on(table.slug),
-		index("organizations_clerk_org_id_idx").on(table.clerk_org_id),
-	],
+	(table) => [index("organizations_slug_idx").on(table.slug)],
 );
 
 export type InsertOrganization = typeof organizations.$inferInsert;
@@ -454,3 +457,63 @@ export const browserHistory = sqliteTable(
 
 export type InsertBrowserHistory = typeof browserHistory.$inferInsert;
 export type SelectBrowserHistory = typeof browserHistory.$inferSelect;
+
+export type DownloadState =
+	| "progressing"
+	| "completed"
+	| "cancelled"
+	| "interrupted";
+
+/**
+ * Downloads table - tracks files downloaded through the in-app browser pane
+ */
+export const downloads = sqliteTable(
+	"downloads",
+	{
+		id: text("id")
+			.primaryKey()
+			.$defaultFn(() => uuidv4()),
+		url: text("url").notNull(),
+		filename: text("filename").notNull(),
+		savePath: text("save_path").notNull(),
+		mimeType: text("mime_type"),
+		totalBytes: integer("total_bytes"),
+		receivedBytes: integer("received_bytes").notNull().default(0),
+		state: text("state").notNull().$type<DownloadState>(),
+		startedAt: integer("started_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+		completedAt: integer("completed_at"),
+	},
+	(table) => [index("downloads_started_at_idx").on(table.startedAt)],
+);
+
+export type InsertDownload = typeof downloads.$inferInsert;
+export type SelectDownload = typeof downloads.$inferSelect;
+
+/**
+ * Screenshots table - tracks page captures taken from the in-app browser
+ * pane's overflow menu. The PNG lives on disk; this row is metadata plus a
+ * small thumbnail so a gallery can render without reading every file.
+ */
+export const screenshots = sqliteTable(
+	"screenshots",
+	{
+		id: text("id")
+			.primaryKey()
+			.$defaultFn(() => uuidv4()),
+		url: text("url").notNull(),
+		filename: text("filename").notNull(),
+		savePath: text("save_path").notNull(),
+		width: integer("width").notNull(),
+		height: integer("height").notNull(),
+		thumbnail: text("thumbnail").notNull(),
+		capturedAt: integer("captured_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+	},
+	(table) => [index("screenshots_captured_at_idx").on(table.capturedAt)],
+);
+
+export type InsertScreenshot = typeof screenshots.$inferInsert;
+export type SelectScreenshot = typeof screenshots.$inferSelect;

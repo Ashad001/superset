@@ -5,8 +5,11 @@ import { COMPANY, ORGANIZATION_HEADER } from "@superset/shared/constants";
 import { initTRPC, TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import superjson from "superjson";
-import { ZodError } from "zod";
+import { formatError, userError } from "./i18n-error";
 import { posthog } from "./lib/analytics";
+
+export type { I18nErrorCause } from "./i18n-error";
+export { isI18nErrorCause, userError } from "./i18n-error";
 
 export interface ApiClientInfo {
 	product: "desktop" | "mobile" | "cli";
@@ -30,28 +33,43 @@ export function parseClientHeader(headers: Headers): ApiClientInfo | null {
 	return { product: product as ApiClientInfo["product"], version };
 }
 
+/**
+ * Set when a request arrived over a transport only agents use — today that is
+ * the MCP server, which `packages/mcp` marks when it builds its caller.
+ * Derived from the transport, never from the request body, so it is safe to
+ * attribute a write to an agent on the strength of it.
+ *
+ * Deliberately NOT set for the CLI. `superset` authenticates with the user's
+ * own OAuth bearer or API key, identically whether a human typed the command
+ * or an agent running in a pane did — the server cannot tell those apart. A
+ * CLI agent self-reports instead (see `agentSessionId` on the page-comment
+ * reply input), which is a hint, not an attestation. Don't treat the absence
+ * of `agentCaller` as proof a human is calling.
+ */
+export type AgentCaller = { transport: "mcp"; label: string | null };
+
 export type TRPCContext = {
 	session: Session | null;
 	auth: typeof auth;
 	headers: Headers;
 	client: ApiClientInfo | null;
+	agentCaller: AgentCaller | null;
 };
 
 export const createTRPCContext = (
-	opts: Omit<TRPCContext, "client">,
-): TRPCContext => ({ ...opts, client: parseClientHeader(opts.headers) });
+	opts: Omit<TRPCContext, "client" | "agentCaller"> & {
+		agentCaller?: AgentCaller | null;
+	},
+): TRPCContext => ({
+	...opts,
+	client: parseClientHeader(opts.headers),
+	agentCaller: opts.agentCaller ?? null,
+});
 
 const t = initTRPC.context<TRPCContext>().create({
 	transformer: superjson,
 	errorFormatter({ shape, error }) {
-		return {
-			...shape,
-			data: {
-				...shape.data,
-				zodError:
-					error.cause instanceof ZodError ? error.cause.flatten() : null,
-			},
-		};
+		return formatError({ shape, error });
 	},
 });
 
@@ -102,9 +120,10 @@ export const protectedProcedure = t.procedure
 	.use(clientTelemetry)
 	.use(async ({ ctx, next }) => {
 		if (!ctx.session) {
-			throw new TRPCError({
+			throw userError({
 				code: "UNAUTHORIZED",
 				message: "Not authenticated. Please sign in.",
+				i18nKey: "serverError.common.notAuthenticatedPleaseSignIn",
 			});
 		}
 
@@ -115,9 +134,10 @@ export const protectedProcedure = t.procedure
 			ctx.session.user.deletionRequestedAt &&
 			!PENDING_DELETION_ALLOWED_PROCEDURES.has(path)
 		) {
-			throw new TRPCError({
+			throw userError({
 				code: "FORBIDDEN",
 				message: "Account is pending deletion.",
+				i18nKey: "serverError.common.accountIsPendingDeletion",
 			});
 		}
 		return next();
@@ -225,10 +245,11 @@ export const jwtProcedure = t.procedure
 			});
 		}
 
-		throw new TRPCError({
+		throw userError({
 			code: "UNAUTHORIZED",
 			message:
 				"Not authenticated. Provide a bearer JWT, x-api-key, or session.",
+			i18nKey: "serverError.common.notAuthenticatedProvideABearerJwt",
 		});
 	})
 	.use(async ({ ctx, path, next }) => {

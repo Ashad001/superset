@@ -1,7 +1,9 @@
+import { i18n } from "@superset/i18n";
 import type { WorkspaceCreateSettledPayload } from "@superset/workspace-client";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback } from "react";
 import { resolveHostUrl } from "renderer/hooks/host-service/useHostTargetUrl";
+import { useActiveOrganizationId } from "renderer/hooks/useActiveOrganizationId";
 import { useRelayUrl } from "renderer/hooks/useRelayUrl";
 import { authClient } from "renderer/lib/auth-client";
 import { electronTrpc } from "renderer/lib/electron-trpc";
@@ -231,7 +233,7 @@ export function useWorkspaceCreates(): UseWorkspaceCreatesApi {
 	const hostService = useLocalHostService();
 	const { machineId, activeHostUrl } = hostService;
 	const { data: session } = authClient.useSession();
-	const organizationId = session?.session?.activeOrganizationId;
+	const organizationId = useActiveOrganizationId();
 	const userId = session?.user?.id ?? null;
 	const collections = useCollections();
 	const { cache: hostWorkspacesCache } = useHostWorkspaces();
@@ -281,9 +283,12 @@ export function useWorkspaceCreates(): UseWorkspaceCreatesApi {
 
 			if (!organizationId || !hostUrl) {
 				const error = !organizationId
-					? "No active organization"
+					? i18n._({
+							id: "stores.workspaceCreates.noActiveOrganization",
+							message: "No active organization",
+						})
 					: getHostServiceUnavailableMessage(hostService, {
-							action: "create the workspace",
+							action: "createWorkspace",
 						});
 				recordFailure(error);
 				return {
@@ -308,11 +313,17 @@ export function useWorkspaceCreates(): UseWorkspaceCreatesApi {
 				name:
 					snapshot.name ??
 					("branch" in snapshot ? snapshot.branch : undefined) ??
-					"New workspace",
+					i18n._({
+						id: "stores.workspaceCreates.defaultName",
+						message: "New workspace",
+					}),
 				branch:
 					("branch" in snapshot ? snapshot.branch : undefined) ??
 					snapshot.name ??
-					"New workspace",
+					i18n._({
+						id: "stores.workspaceCreates.defaultName",
+						message: "New workspace",
+					}),
 				type: isSession ? "session" : "worktree",
 				createdByUserId: userId,
 				taskId: ("taskId" in snapshot ? snapshot.taskId : undefined) ?? null,

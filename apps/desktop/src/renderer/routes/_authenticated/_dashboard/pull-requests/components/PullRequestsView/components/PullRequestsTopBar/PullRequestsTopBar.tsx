@@ -1,21 +1,30 @@
-import { OpenClosedFilter } from "renderer/routes/_authenticated/_dashboard/components/OpenClosedFilter";
+import { Trans, useLingui } from "@lingui/react/macro";
+import { Button } from "@superset/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@superset/ui/popover";
+import { cn } from "@superset/ui/utils";
+import { LuListFilter } from "react-icons/lu";
 import { ProjectFilter } from "renderer/routes/_authenticated/_dashboard/components/ProjectFilter";
 import { WorkItemsSearch } from "renderer/routes/_authenticated/_dashboard/components/WorkItemsSearch";
+import type { ProjectQueryTarget } from "renderer/routes/_authenticated/_dashboard/hooks/useProjectQueryTargets";
+import { PullRequestDetailToggle } from "renderer/routes/_authenticated/_dashboard/pull-requests/components/PullRequestDetailToggle";
 import type { PullRequestReviewFilter } from "renderer/routes/_authenticated/_dashboard/pull-requests/utils/pullRequestReviewFilter";
 import { AuthorFilter } from "./components/AuthorFilter";
 import { ReviewFilter } from "./components/ReviewFilter";
+
+type PullRequestsStateFilter = "open" | "all" | "merged";
 
 interface PullRequestsTopBarProps {
 	searchQuery: string;
 	onSearchChange: (query: string) => void;
 	projectFilters: string[];
 	onProjectFiltersChange: (projectIds: string[]) => void;
+	projectTargets: ProjectQueryTarget[];
 	authorFilter: string | null;
 	onAuthorFilterChange: (author: string | null) => void;
 	reviewFilter: PullRequestReviewFilter | null;
 	onReviewFilterChange: (review: PullRequestReviewFilter | null) => void;
-	includeClosed: boolean;
-	onIncludeClosedChange: (includeClosed: boolean) => void;
+	stateFilter: PullRequestsStateFilter;
+	onStateFilterChange: (state: PullRequestsStateFilter) => void;
 }
 
 export function PullRequestsTopBar({
@@ -23,59 +32,169 @@ export function PullRequestsTopBar({
 	onSearchChange,
 	projectFilters,
 	onProjectFiltersChange,
+	projectTargets,
 	authorFilter,
 	onAuthorFilterChange,
 	reviewFilter,
 	onReviewFilterChange,
-	includeClosed,
-	onIncludeClosedChange,
+	stateFilter,
+	onStateFilterChange,
 }: PullRequestsTopBarProps) {
+	const { t } = useLingui();
+	const stateTabs: ReadonlyArray<{
+		value: PullRequestsStateFilter;
+		label: string;
+	}> = [
+		{
+			value: "all",
+			label: t({
+				id: "dashboard.pullRequests.stateFilter.all",
+				message: "All",
+			}),
+		},
+		{
+			value: "open",
+			label: t({
+				id: "dashboard.pullRequests.stateFilter.open",
+				message: "Open",
+			}),
+		},
+		{
+			value: "merged",
+			label: t({
+				id: "dashboard.pullRequests.stateFilter.merged",
+				message: "Merged",
+			}),
+		},
+	];
+	const activeFilterCount = [
+		projectFilters.length > 0,
+		!!authorFilter,
+		!!reviewFilter,
+	].filter(Boolean).length;
+
 	return (
 		<div
 			data-pull-requests-toolbar
-			className="@container shrink-0 border-b border-border px-4 py-2"
+			className="flex shrink-0 flex-col gap-2 border-b border-border px-3 py-2"
 		>
-			<div className="flex flex-col items-stretch gap-2 @4xl:flex-row @4xl:items-center @4xl:justify-between">
-				<div className="flex min-w-0 items-center gap-3 overflow-x-auto hide-scrollbar">
-					<div className="flex items-center gap-2">
-						<span className="text-xs text-muted-foreground">Repository</span>
-						<ProjectFilter
-							value={projectFilters}
-							onChange={onProjectFiltersChange}
-						/>
-					</div>
-					<div className="h-4 w-px shrink-0 bg-border" />
-					<div className="flex items-center gap-2">
-						<span className="text-xs text-muted-foreground">Author</span>
-						<AuthorFilter
-							value={authorFilter}
-							onChange={onAuthorFilterChange}
-						/>
-					</div>
-					<div className="h-4 w-px shrink-0 bg-border" />
-					<div className="flex items-center gap-2">
-						<span className="text-xs text-muted-foreground">Reviews</span>
-						<ReviewFilter
-							value={reviewFilter}
-							onChange={onReviewFilterChange}
-						/>
-					</div>
-					<div className="h-4 w-px shrink-0 bg-border" />
-					<OpenClosedFilter
-						includeClosed={includeClosed}
-						onChange={onIncludeClosedChange}
-					/>
-				</div>
+			<div
+				role="radiogroup"
+				aria-label={t({
+					id: "dashboard.pullRequests.stateFilter.groupAria",
+					message: "Filter by state",
+				})}
+				className="flex items-center gap-1"
+			>
+				{stateTabs.map((tab) => (
+					// biome-ignore lint/a11y/useSemanticElements: styled as a pill button, not a native radio input
+					<button
+						key={tab.value}
+						type="button"
+						role="radio"
+						onClick={() => onStateFilterChange(tab.value)}
+						aria-checked={stateFilter === tab.value}
+						className={cn(
+							"rounded-md px-2 py-1 text-xs font-medium transition-colors",
+							stateFilter === tab.value
+								? "bg-accent text-foreground"
+								: "text-muted-foreground hover:text-foreground",
+						)}
+					>
+						{tab.label}
+					</button>
+				))}
 				{/* Window-drag leaf standing in for the hidden TopBar. */}
 				<div className="drag hidden min-w-0 flex-1 self-stretch @4xl:block" />
-				<div className="shrink-0">
+				<div className="ml-auto shrink-0">
+					<PullRequestDetailToggle />
+				</div>
+			</div>
+			<div className="flex items-center gap-1.5">
+				<div className="min-w-0 flex-1">
 					<WorkItemsSearch
 						value={searchQuery}
 						onChange={onSearchChange}
-						placeholder="Search pull requests…"
-						label="Search pull requests"
+						placeholder={t({
+							id: "dashboard.pullRequests.search.placeholder",
+							message: "Search pull requests…",
+						})}
+						label={t({
+							id: "dashboard.pullRequests.search.label",
+							message: "Search pull requests",
+						})}
+						className="bg-muted"
 					/>
 				</div>
+				<Popover>
+					<PopoverTrigger asChild>
+						<Button
+							variant="outline"
+							size="icon-xs"
+							className="relative shrink-0"
+							aria-label={
+								activeFilterCount > 0
+									? t({
+											id: "dashboard.pullRequests.filters.triggerAriaActive",
+											message: `Filters, ${activeFilterCount} active`,
+										})
+									: t({
+											id: "dashboard.pullRequests.filters.trigger",
+											message: "Filters",
+										})
+							}
+							title={t({
+								id: "dashboard.pullRequests.filters.trigger",
+								message: "Filters",
+							})}
+						>
+							<LuListFilter className="size-3.5" />
+							{activeFilterCount > 0 && (
+								<span
+									aria-hidden="true"
+									className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-primary text-[9px] font-medium text-primary-foreground"
+								>
+									{activeFilterCount}
+								</span>
+							)}
+						</Button>
+					</PopoverTrigger>
+					<PopoverContent align="end" className="w-80 space-y-1">
+						<div className="flex items-center justify-between gap-2">
+							<span className="text-xs text-muted-foreground">
+								<Trans id="dashboard.pullRequests.filters.repository">
+									Repository
+								</Trans>
+							</span>
+							<ProjectFilter
+								value={projectFilters}
+								onChange={onProjectFiltersChange}
+								alwaysShowLabel
+							/>
+						</div>
+						<div className="flex items-center justify-between gap-2">
+							<span className="text-xs text-muted-foreground">
+								<Trans id="dashboard.pullRequests.filters.author">Author</Trans>
+							</span>
+							<AuthorFilter
+								value={authorFilter}
+								onChange={onAuthorFilterChange}
+								projectTargets={projectTargets}
+							/>
+						</div>
+						<div className="flex items-center justify-between gap-2">
+							<span className="text-xs text-muted-foreground">
+								<Trans id="dashboard.pullRequests.filters.reviews">
+									Reviews
+								</Trans>
+							</span>
+							<ReviewFilter
+								value={reviewFilter}
+								onChange={onReviewFilterChange}
+							/>
+						</div>
+					</PopoverContent>
+				</Popover>
 			</div>
 		</div>
 	);

@@ -1,11 +1,11 @@
+import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { router, Stack } from "expo-router";
 import { ChevronRight } from "lucide-react-native";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	ActivityIndicator,
-	Alert,
 	Linking,
 	Pressable,
 	RefreshControl,
@@ -15,19 +15,23 @@ import {
 } from "react-native";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
+import { posthog } from "@/lib/posthog";
 import { useAppReviewPrompt } from "@/screens/(authenticated)/hooks/useAppReviewPrompt";
-import { HeaderNotice } from "./components/HeaderNotice";
+import { HeaderNotice } from "../../components/HeaderNotice";
 import { PullRequestCard } from "./components/PullRequestCard";
 import { PullRequestDescription } from "./components/PullRequestDescription";
 import { PullRequestHeader } from "./components/PullRequestHeader";
+import { useAskAgent } from "./hooks/useAskAgent";
 import { useMergePullRequest } from "./hooks/useMergePullRequest";
+import { usePullRequestActions } from "./hooks/usePullRequestActions";
 import { usePullRequestRoute } from "./usePullRequestRoute";
-import type { ActionId } from "./utils/pullRequestState";
+import { type ActionId, isAgentAction } from "./utils/pullRequestState";
 
 const NOTICE_MS = 1500;
 
 /** One pull request: what it is waiting on and what you can do about it. */
 export function PullRequestScreen() {
+	const { t } = useLingui();
 	const {
 		detail,
 		isLoading,
@@ -38,6 +42,18 @@ export function PullRequestScreen() {
 		owner,
 		repo,
 	} = usePullRequestRoute();
+
+	// Once per pull request the screen shows, not once per refetch.
+	const openedPullRequestRef = useRef<string | null>(null);
+	useEffect(() => {
+		const key = `${workspaceId}:${pullNumber}`;
+		if (pullNumber === null || openedPullRequestRef.current === key) return;
+		openedPullRequestRef.current = key;
+		posthog.capture("pull_request_opened", {
+			workspace_id: workspaceId,
+			pr_number: pullNumber,
+		});
+	}, [workspaceId, pullNumber]);
 
 	const requestAppReview = useAppReviewPrompt();
 	const merge = useMergePullRequest({
@@ -50,6 +66,14 @@ export function PullRequestScreen() {
 			requestAppReview("pr_merged");
 		},
 	});
+	const actions = usePullRequestActions({
+		workspaceId,
+		owner,
+		repo,
+		pullNumber,
+		onDone: () => void refetch(),
+	});
+	const askAgent = useAskAgent({ workspaceId });
 
 	const [notice, setNotice] = useState<string | null>(null);
 	const hideNotice = useCallback(() => setNotice(null), []);
@@ -57,7 +81,9 @@ export function PullRequestScreen() {
 		if (!detail) return;
 		await Clipboard.setStringAsync(detail.pullRequest.url);
 		void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-		setNotice("Copied Link");
+		setNotice(
+			t({ id: "mobile.pullRequest.copiedLink", message: "Copied Link" }),
+		);
 	};
 
 	const [pulling, setPulling] = useState(false);
@@ -83,8 +109,14 @@ export function PullRequestScreen() {
 			<View className="bg-background flex-1 items-center justify-center gap-5 px-10">
 				<Text className="text-muted-foreground text-center text-[15px] leading-[21px]">
 					{error
-						? "Could not reach the host to load this pull request."
-						: "This pull request is no longer available."}
+						? t({
+								id: "mobile.pullRequest.hostUnreachable",
+								message: "Could not reach the host to load this pull request.",
+							})
+						: t({
+								id: "mobile.pullRequest.unavailable",
+								message: "This pull request is no longer available.",
+							})}
 				</Text>
 				<Pressable
 					accessibilityRole="button"
@@ -94,7 +126,9 @@ export function PullRequestScreen() {
 					}
 				>
 					<Text className="font-medium text-[15px]">
-						{router.canGoBack() ? "Go back" : "Go home"}
+						{router.canGoBack()
+							? t({ id: "mobile.common.goBack", message: "Go back" })
+							: t({ id: "mobile.notFound.goHome", message: "Go home" })}
 					</Text>
 				</Pressable>
 			</View>
@@ -108,7 +142,11 @@ export function PullRequestScreen() {
 			merge.confirmAndMerge(detail);
 			return;
 		}
-		Alert.alert("Not available yet", "This action is not wired up yet.");
+		if (isAgentAction(action)) {
+			askAgent.ask(action, detail);
+			return;
+		}
+		actions.run(action);
 	};
 
 	return (
@@ -129,13 +167,19 @@ export function PullRequestScreen() {
 			/>
 			<Stack.Toolbar placement="right">
 				<Stack.Toolbar.Button
-					accessibilityLabel="Copy link to pull request"
+					accessibilityLabel={t({
+						id: "mobile.pullRequest.copyLinkLabel",
+						message: "Copy link to pull request",
+					})}
 					icon="link"
 					onPress={() => void copyLink()}
 					separateBackground
 				/>
 				<Stack.Toolbar.Menu
-					accessibilityLabel="Pull request actions"
+					accessibilityLabel={t({
+						id: "mobile.pullRequest.actionsLabel",
+						message: "Pull request actions",
+					})}
 					icon="ellipsis"
 					separateBackground
 				>
@@ -143,19 +187,22 @@ export function PullRequestScreen() {
 						icon="doc.on.doc"
 						onPress={() => void copyLink()}
 					>
-						Copy link
+						{t({ id: "mobile.pullRequest.copyLink", message: "Copy link" })}
 					</Stack.Toolbar.MenuAction>
 					<Stack.Toolbar.MenuAction
 						icon="arrow.up.right"
 						onPress={() => void Linking.openURL(detail.pullRequest.url)}
 					>
-						Open in GitHub
+						{t({
+							id: "mobile.pullRequest.openInGitHub",
+							message: "Open in GitHub",
+						})}
 					</Stack.Toolbar.MenuAction>
 					<Stack.Toolbar.MenuAction
 						icon="square.and.arrow.up"
 						onPress={() => void Share.share({ url: detail.pullRequest.url })}
 					>
-						Share
+						{t({ id: "mobile.common.share", message: "Share" })}
 					</Stack.Toolbar.MenuAction>
 				</Stack.Toolbar.Menu>
 			</Stack.Toolbar>
@@ -180,7 +227,11 @@ export function PullRequestScreen() {
 					queued={detail.mergeability.queue !== null}
 				/>
 				<PullRequestCard
-					busyAction={merge.isMerging ? "merge" : null}
+					busyAction={
+						merge.isMerging
+							? "merge"
+							: (actions.busyAction ?? askAgent.busyAction)
+					}
 					capabilities={detail.capabilities}
 					checks={detail.checks}
 					mergeability={detail.mergeability}
@@ -210,7 +261,9 @@ export function PullRequestScreen() {
 				<PullRequestDescription body={detail.pullRequest.body} />
 				<View className="bg-border mx-4 h-px" />
 				<View className="mx-4 gap-3">
-					<Text className="text-muted-foreground text-[15px]">Files</Text>
+					<Text className="text-muted-foreground text-[15px]">
+						<Trans id="mobile.pullRequest.files">Files</Trans>
+					</Text>
 					<Pressable
 						accessibilityRole="button"
 						className="border-border flex-row items-center justify-between rounded-xl border px-4 py-3.5 active:opacity-60"
@@ -222,8 +275,12 @@ export function PullRequestScreen() {
 						}
 					>
 						<Text className="text-[15px]">
-							{detail.pullRequest.changedFiles}{" "}
-							{detail.pullRequest.changedFiles === 1 ? "file" : "files"} changed
+							<Plural
+								id="mobile.pullRequest.filesChangedCount"
+								value={detail.pullRequest.changedFiles}
+								one="# file changed"
+								other="# files changed"
+							/>
 						</Text>
 						<Icon as={ChevronRight} className="text-muted-foreground size-4" />
 					</Pressable>

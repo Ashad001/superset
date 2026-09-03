@@ -1,6 +1,9 @@
+import { Trans, useLingui } from "@lingui/react/macro";
 import {
 	getAgentEffortSupport,
+	getAgentEfforts,
 	getAgentModelSupport,
+	getAgentModeSupport,
 } from "@superset/shared/agent-models";
 import {
 	PromptInput,
@@ -35,13 +38,16 @@ import { LinkedIssuePill } from "renderer/components/LinkedIssuePill";
 import { MarkdownEditor } from "renderer/components/MarkdownEditor";
 import { useHostProjects } from "renderer/hooks/host-projects/useHostProjects";
 import { resolveHostUrl } from "renderer/hooks/host-service/useHostTargetUrl";
+import { useActiveOrganizationId } from "renderer/hooks/useActiveOrganizationId";
 import { useAgentEffortPreference } from "renderer/hooks/useAgentEffortPreference";
 import { useAgentLaunchPreferences } from "renderer/hooks/useAgentLaunchPreferences";
 import { useAgentModelPreference } from "renderer/hooks/useAgentModelPreference";
+import { useAgentModePreference } from "renderer/hooks/useAgentModePreference";
 import { useRelayUrl } from "renderer/hooks/useRelayUrl";
 import { useV2AgentChoices } from "renderer/hooks/useV2AgentChoices";
+import { CLOUD_AGENT_CHOICES } from "renderer/hooks/useV2AgentChoices/cloud-agent-choices";
 import { track } from "renderer/lib/analytics";
-import { authClient } from "renderer/lib/auth-client";
+import { cloudTrpc } from "renderer/lib/cloud-trpc";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { showHostServiceUnavailableToast } from "renderer/lib/host-service-unavailable";
 import { SupersetIcon } from "renderer/routes/_authenticated/onboarding/providers/components/SupersetIcon";
@@ -49,6 +55,12 @@ import { useHostWorkspaces } from "renderer/routes/_authenticated/providers/Host
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { newWorkspaceAttachmentPaths } from "renderer/stores/new-workspace-attachments";
 import { useNewWorkspacePromptContext } from "renderer/stores/new-workspace-prompt-context";
+import {
+	NEW_WORKSPACE_SCREEN_DEFAULT_WIDTH,
+	NEW_WORKSPACE_SCREEN_MAX_WIDTH,
+	NEW_WORKSPACE_SCREEN_MIN_WIDTH,
+	useNewWorkspaceWidthStore,
+} from "renderer/stores/new-workspace-width";
 import { useV2WorkspaceCreateDefaultsStore } from "renderer/stores/v2-workspace-create-defaults";
 import { useDashboardNewWorkspaceDraft } from "../../DashboardNewWorkspaceDraftContext";
 import {
@@ -59,6 +71,7 @@ import { DevicePicker } from "../DashboardNewWorkspaceForm/components/DevicePick
 import { CLOUD_HOST_ID } from "../DashboardNewWorkspaceForm/components/DevicePicker/DevicePicker";
 import { useWorkspaceHostOptions } from "../DashboardNewWorkspaceForm/components/DevicePicker/hooks/useWorkspaceHostOptions";
 import { CompareBaseBranchPicker } from "../DashboardNewWorkspaceForm/PromptGroup/components/CompareBaseBranchPicker";
+import { EnvironmentPickerPill } from "../DashboardNewWorkspaceForm/PromptGroup/components/EnvironmentPickerPill";
 import { GitHubIssueLinkCommand } from "../DashboardNewWorkspaceForm/PromptGroup/components/GitHubIssueLinkCommand";
 import { LinkedGitHubIssuePill } from "../DashboardNewWorkspaceForm/PromptGroup/components/LinkedGitHubIssuePill";
 import { LinkedPRPill } from "../DashboardNewWorkspaceForm/PromptGroup/components/LinkedPRPill";
@@ -75,11 +88,13 @@ import {
 import {
 	AGENT_STORAGE_KEY,
 	EFFORT_STORAGE_KEY,
+	MODE_STORAGE_KEY,
 	MODEL_STORAGE_KEY,
 	PILL_BUTTON_CLASS,
 	type WorkspaceCreateAgent,
 } from "../DashboardNewWorkspaceForm/PromptGroup/types";
 import { useSelectedHostProjectIds } from "../DashboardNewWorkspaceModalContent/hooks/useSelectedHostProjectIds";
+import { SymmetricResizeHandles } from "../SymmetricResizeHandles";
 import { AttachmentCard } from "./components/AttachmentCard";
 import { SamplePromptCards } from "./components/SamplePromptCards";
 import { SamplePrompts } from "./components/SamplePrompts";
@@ -117,6 +132,7 @@ export function NewWorkspaceScreen({
 	preSelectedProjectId,
 	preSelectedSession = false,
 }: NewWorkspaceScreenProps) {
+	const { t } = useLingui();
 	const navigate = useNavigate();
 	const [promptSeed, setPromptSeed] = useState(0);
 	const openInFinderMutation = electronTrpc.external.openInFinder.useMutation();
@@ -132,8 +148,16 @@ export function NewWorkspaceScreen({
 	const hostService = useLocalHostService();
 	const { activeHostUrl, machineId } = hostService;
 	const relayUrl = useRelayUrl();
-	const { data: session } = authClient.useSession();
-	const activeOrganizationId = session?.session?.activeOrganizationId;
+	const activeOrganizationId = useActiveOrganizationId();
+
+	const environmentsQuery = cloudTrpc.environment.list.useQuery(
+		{ organizationId: activeOrganizationId ?? "" },
+		{ enabled: draft.hostId === CLOUD_HOST_ID && !!activeOrganizationId },
+	);
+	const environmentOptions = environmentsQuery.data ?? [];
+	const selectedEnvironment =
+		environmentOptions.find((row) => row.id === draft.environmentId) ??
+		environmentOptions[0];
 	const setLastProjectId = useV2WorkspaceCreateDefaultsStore(
 		(state) => state.setLastProjectId,
 	);
@@ -286,6 +310,18 @@ export function NewWorkspaceScreen({
 		updateDraft,
 	]);
 
+	const storedComposerWidth = useNewWorkspaceWidthStore(
+		(state) => state.screenWidth,
+	);
+	const setStoredComposerWidth = useNewWorkspaceWidthStore(
+		(state) => state.setScreenWidth,
+	);
+	/** Width while a resize drag is in flight; persisted on release. */
+	const [liveComposerWidth, setLiveComposerWidth] = useState<number | null>(
+		null,
+	);
+	const composerWidth = liveComposerWidth ?? storedComposerWidth;
+
 	// One suggestion per open. resetKey only bumps on resetDraft, so ordinary
 	// modal reopens roll their own counter; the tiptap Placeholder extension
 	// freezes its text at editor mount, so the roll also rides the editor key.
@@ -298,13 +334,18 @@ export function NewWorkspaceScreen({
 		wasOpenRef.current = isOpen;
 	}, [isOpen]);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: re-roll per draft reset and per open
-	const promptPlaceholder = useMemo(
-		() =>
+	const promptPlaceholder = useMemo(() => {
+		const descriptor =
 			PROMPT_PLACEHOLDERS[
 				Math.floor(Math.random() * PROMPT_PLACEHOLDERS.length)
-			] ?? "What do you want to do?",
-		[resetKey, placeholderRoll],
-	);
+			];
+		return descriptor
+			? t(descriptor)
+			: t({
+					id: "dashboard.newWorkspaceModal.promptPlaceholder.whatDoYouWantToDo",
+					message: "What do you want to do?",
+				});
+	}, [resetKey, placeholderRoll, t]);
 
 	const projectId = draft.selectedProjectId;
 	const selectedProject = projects.find((project) => project.id === projectId);
@@ -413,8 +454,12 @@ export function NewWorkspaceScreen({
 		setSamplePromptsDismissed(true);
 	}, [promptLayout, setSamplePromptsDismissed]);
 
-	const { agents: v2Agents, isFetched: v2AgentsFetched } =
+	const { agents: hostAgents, isFetched: hostAgentsFetched } =
 		useV2AgentChoices(launchHostUrl);
+	// Under Cloud the built-in presets stand in for a host's agent list.
+	const v2Agents =
+		draft.hostId === CLOUD_HOST_ID ? CLOUD_AGENT_CHOICES : hostAgents;
+	const v2AgentsFetched = draft.hostId === CLOUD_HOST_ID || hostAgentsFetched;
 	const selectableAgentIds = useMemo(
 		() => v2Agents.map((agent) => agent.id),
 		[v2Agents],
@@ -442,10 +487,10 @@ export function NewWorkspaceScreen({
 		if (first) setSelectedAgent(first);
 	}, [v2AgentsFetched, selectableAgentIds, selectedAgent, setSelectedAgent]);
 
-	const selectedPresetId = useMemo(
-		() => v2Agents.find((agent) => agent.id === selectedAgent)?.iconId ?? null,
-		[v2Agents, selectedAgent],
-	);
+	const selectedPresetId = useMemo(() => {
+		const agent = v2Agents.find((candidate) => candidate.id === selectedAgent);
+		return agent?.launchPresetId ?? agent?.presetId ?? agent?.iconId ?? null;
+	}, [v2Agents, selectedAgent]);
 	const modelSupport = selectedPresetId
 		? getAgentModelSupport(selectedPresetId)
 		: undefined;
@@ -459,6 +504,28 @@ export function NewWorkspaceScreen({
 	const { selectedEffort, setSelectedEffort } = useAgentEffortPreference(
 		EFFORT_STORAGE_KEY,
 		effortSupport ? selectedPresetId : null,
+	);
+	// Codex's top two efforts only exist on its GPT-5.6 models, so the offered
+	// list follows the model picker. A remembered effort the current model
+	// rejects stays stored but shows (and launches) as the agent default.
+	const effortOptions = useMemo(
+		() =>
+			selectedPresetId
+				? getAgentEfforts(selectedPresetId, selectedModel ?? undefined)
+				: [],
+		[selectedPresetId, selectedModel],
+	);
+	const effortForLaunch = effortOptions.some(
+		(option) => option.id === selectedEffort,
+	)
+		? selectedEffort
+		: null;
+	const modeSupport = selectedPresetId
+		? getAgentModeSupport(selectedPresetId)
+		: undefined;
+	const { selectedMode, setSelectedMode } = useAgentModePreference(
+		MODE_STORAGE_KEY,
+		modeSupport ? selectedPresetId : null,
 	);
 
 	// ── Base branch ──────────────────────────────────────────────────
@@ -500,24 +567,40 @@ export function NewWorkspaceScreen({
 		projectId,
 		selectedAgent,
 		modelSupport ? selectedModel : null,
-		effortSupport ? selectedEffort : null,
+		effortForLaunch,
+		modeSupport ? selectedMode : null,
 		uploadAttachments,
 		promptContext,
 	);
 
 	const { otherHosts } = useWorkspaceHostOptions();
 	const submitBlocker = useMemo<string | null>(() => {
-		if (!projectId && !draft.isSession) return "Select a project";
+		if (!projectId && !draft.isSession)
+			return t({
+				id: "dashboard.newWorkspaceModal.newWorkspaceScreen.blockerSelectProject",
+				message: "Select a project",
+			});
 		const selectedHostId = draft.hostId ?? machineId;
 		// A cloud workspace is provisioned on submit, so there is no host whose
 		// readiness could block it.
 		if (selectedHostId === CLOUD_HOST_ID) return null;
-		if (!selectedHostId) return "No active host";
+		if (!selectedHostId)
+			return t({
+				id: "dashboard.newWorkspaceModal.newWorkspaceScreen.blockerNoActiveHost",
+				message: "No active host",
+			});
 		if (selectedHostId !== machineId) {
 			const remote = otherHosts.find((host) => host.id === selectedHostId);
-			if (!remote?.isOnline) return "Host is offline";
+			if (!remote?.isOnline)
+				return t({
+					id: "dashboard.newWorkspaceModal.newWorkspaceScreen.blockerHostOffline",
+					message: "Host is offline",
+				});
 		} else if (!activeHostUrl) {
-			return "Host service is not running";
+			return t({
+				id: "dashboard.newWorkspaceModal.newWorkspaceScreen.blockerHostServiceNotRunning",
+				message: "Host service is not running",
+			});
 		}
 		return null;
 	}, [
@@ -527,6 +610,7 @@ export function NewWorkspaceScreen({
 		machineId,
 		activeHostUrl,
 		otherHosts,
+		t,
 	]);
 
 	const handleGoToSetup = useCallback(() => {
@@ -564,7 +648,7 @@ export function NewWorkspaceScreen({
 		if (submitBlocker) {
 			if ((draft.hostId ?? machineId) === machineId && !activeHostUrl) {
 				showHostServiceUnavailableToast(hostService, {
-					action: "create the workspace",
+					action: "createWorkspace",
 				});
 			} else {
 				toast.error(submitBlocker);
@@ -609,7 +693,9 @@ export function NewWorkspaceScreen({
 						className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-background/70"
 					>
 						<span className="rounded-lg border border-border bg-popover px-3 py-1.5 text-sm text-popover-foreground shadow-md">
-							Drop to attach
+							<Trans id="dashboard.newWorkspaceModal.newWorkspaceScreen.dropToAttach">
+								Drop to attach
+							</Trans>
 						</span>
 					</motion.div>
 				)}
@@ -624,7 +710,10 @@ export function NewWorkspaceScreen({
 								type="button"
 								variant="ghost"
 								size="icon"
-								aria-label="Update naming instructions"
+								aria-label={t({
+									id: "dashboard.newWorkspaceModal.newWorkspaceScreen.updateNamingInstructionsAria",
+									message: "Update naming instructions",
+								})}
 								className="size-7 text-muted-foreground"
 								onClick={handleGoToNamingInstructions}
 							>
@@ -632,19 +721,27 @@ export function NewWorkspaceScreen({
 							</Button>
 						</TooltipTrigger>
 						<TooltipContent>
-							Update naming instructions for {selectedProject.name}
+							<Trans id="dashboard.newWorkspaceModal.newWorkspaceScreen.updateNamingInstructions">
+								Update naming instructions for {selectedProject.name}
+							</Trans>
 						</TooltipContent>
 					</Tooltip>
 				)}
 				<PromptHistoryCommand
 					onSelect={applyPrompt}
-					tooltipLabel="Previous prompts"
+					tooltipLabel={t({
+						id: "dashboard.newWorkspaceModal.newWorkspaceScreen.previousPrompts",
+						message: "Previous prompts",
+					})}
 				>
 					<Button
 						type="button"
 						variant="ghost"
 						size="icon"
-						aria-label="Previous prompts"
+						aria-label={t({
+							id: "dashboard.newWorkspaceModal.newWorkspaceScreen.previousPrompts",
+							message: "Previous prompts",
+						})}
 						className="size-7 text-muted-foreground"
 					>
 						<HistoryIcon className="size-4" />
@@ -654,277 +751,369 @@ export function NewWorkspaceScreen({
 			<div className="flex flex-1 flex-col items-center justify-center gap-8">
 				<SupersetIcon className="h-10 w-auto text-muted-foreground/70" />
 				<h1 className="text-center text-3xl font-medium text-foreground/90">
-					What should we build next?
+					<Trans id="dashboard.newWorkspaceModal.newWorkspaceScreen.heading">
+						What should we build next?
+					</Trans>
 				</h1>
 				<GitHubStarPill surface="new_workspace" reserveSpace />
 			</div>
-			<div className="relative flex w-full max-w-[640px] flex-col px-6 pb-8">
-				<AnimatePresence initial={false}>
-					{isPromptEmpty &&
-						promptCardsVariant !== null &&
-						!samplePromptsPending &&
-						!samplePromptsDismissed && (
-							<motion.div
-								key="sample-prompts"
-								initial={{ opacity: 0, y: 12 }}
-								animate={{ opacity: 1, y: 0 }}
-								exit={{ opacity: 0, transition: { duration: 0 } }}
-								transition={{ type: "tween", duration: 0.15, ease: "easeOut" }}
-								// In flow, not absolute: the heading above is the flex-1
-								// spacer, so it absorbs this block's height and the composer
-								// stays put. Positioning it out of flow let tall suggestion
-								// sets overlap the heading instead.
-								className="mb-1"
-							>
-								{promptCardsVariant === "control" ? (
-									<SamplePrompts
-										prompts={samplePrompts}
-										onSelect={applyPrompt}
-										onDismiss={handleDismissSamplePrompts}
-										canDismiss={hasRealWorkspace}
-										tier={samplePromptTier}
-									/>
-								) : (
-									<SamplePromptCards
-										prompts={samplePrompts}
-										onSelect={applyPrompt}
-										onDismiss={handleDismissSamplePrompts}
-										canDismiss={hasRealWorkspace}
-										layout={promptLayout}
-										tier={samplePromptTier}
-									/>
-								)}
-							</motion.div>
-						)}
-				</AnimatePresence>
-				<PromptInput
-					onSubmit={handleSubmit}
-					multiple
-					globalDrop
-					maxFiles={5}
-					maxFileSize={10 * 1024 * 1024}
-					className="[&>[data-slot=input-group]]:rounded-[13px] [&>[data-slot=input-group]]:border-[0.5px] [&>[data-slot=input-group]]:shadow-none [&>[data-slot=input-group]]:bg-foreground/[0.02]"
+			<div className="flex w-full flex-col items-center px-6 pb-8">
+				<div
+					className="relative flex w-full flex-col"
+					style={{
+						maxWidth: composerWidth ?? NEW_WORKSPACE_SCREEN_DEFAULT_WIDTH,
+					}}
 				>
-					{(draft.linkedPR ||
-						draft.linkedIssues.length > 0 ||
-						visibleFiles.length > 0) && (
-						<div className="flex items-start gap-2 self-stretch overflow-x-auto px-3 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-							{draft.linkedPR && (
-								<div className="shrink-0">
-									<LinkedPRPill
-										prNumber={draft.linkedPR.prNumber}
-										title={draft.linkedPR.title}
-										state={draft.linkedPR.state}
-										onRemove={removeLinkedPR}
-									/>
-								</div>
-							)}
-							{draft.linkedIssues.map((issue) => (
-								<div key={issue.url ?? issue.slug} className="shrink-0">
-									{issue.source === "github" && issue.number != null ? (
-										<LinkedGitHubIssuePill
-											issueNumber={issue.number}
-											title={issue.title}
-											state={issue.state ?? "open"}
-											onRemove={() => removeLinkedIssue(issue.slug)}
+					<AnimatePresence initial={false}>
+						{isPromptEmpty &&
+							promptCardsVariant !== null &&
+							!samplePromptsPending &&
+							!samplePromptsDismissed && (
+								<motion.div
+									key="sample-prompts"
+									initial={{ opacity: 0, y: 12 }}
+									animate={{ opacity: 1, y: 0 }}
+									exit={{ opacity: 0, transition: { duration: 0 } }}
+									transition={{
+										type: "tween",
+										duration: 0.15,
+										ease: "easeOut",
+									}}
+									// In flow, not absolute: the heading above is the flex-1
+									// spacer, so it absorbs this block's height and the composer
+									// stays put. Positioning it out of flow let tall suggestion
+									// sets overlap the heading instead.
+									className="mb-1"
+								>
+									{promptCardsVariant === "control" ? (
+										<SamplePrompts
+											prompts={samplePrompts}
+											onSelect={applyPrompt}
+											onDismiss={handleDismissSamplePrompts}
+											canDismiss={hasRealWorkspace}
+											tier={samplePromptTier}
 										/>
 									) : (
-										<LinkedIssuePill
-											slug={issue.slug}
-											title={issue.title}
-											url={issue.url}
-											taskId={issue.taskId}
-											onRemove={() => removeLinkedIssue(issue.slug)}
+										<SamplePromptCards
+											prompts={samplePrompts}
+											onSelect={applyPrompt}
+											onDismiss={handleDismissSamplePrompts}
+											canDismiss={hasRealWorkspace}
+											layout={promptLayout}
+											tier={samplePromptTier}
 										/>
 									)}
-								</div>
-							))}
-							{visibleFiles.map((file) => {
-								const sourcePath = file.filename
-									? newWorkspaceAttachmentPaths.get(file.filename) || null
-									: null;
-								return (
-									<AttachmentCard
-										key={file.id}
-										file={file}
-										hostUrl={launchHostUrl}
-										onRemove={(id) => attachments.remove(id)}
-										onOpenFile={
-											sourcePath
-												? () => openInFinderMutation.mutate(sourcePath)
-												: null
-										}
-									/>
-								);
-							})}
-						</div>
-					)}
-					<MarkdownEditor
-						key={`${resetKey}-${promptSeed}-${placeholderRoll}`}
-						content={draft.prompt}
-						onChange={(markdown) => updateDraft({ prompt: markdown })}
-						onPasteFiles={(files) => attachments.add(files)}
-						onEnterSubmit={handleSubmit}
-						autoFocus={draft.prompt ? "end" : "start"}
-						placeholder={promptPlaceholder}
-						className="flex flex-col min-h-[80px] max-h-[200px] px-3 pt-3"
-						editorClassName="overflow-y-auto text-sm"
-						features={{
-							slashCommand: false,
-							emoji: false,
-							fileMention: false,
-							bubbleMenu: false,
-						}}
-					/>
-					<PromptInputFooter>
-						<PromptInputTools className="gap-1.5">
-							<AgentSelect<WorkspaceCreateAgent>
-								agents={v2Agents}
-								value={selectedAgent}
-								placeholder="No agent"
-								onValueChange={setSelectedAgent}
-								onBeforeConfigureAgents={closeModal}
-								triggerClassName={`${PILL_BUTTON_CLASS} px-1.5 gap-1 text-foreground w-auto max-w-[160px]`}
-								iconClassName="size-3 object-contain"
-								allowNone
-								noneLabel="No agent"
-								noneValue="none"
-							/>
-							{modelSupport && (
-								<AgentModelSelect
-									models={modelSupport.models}
-									value={selectedModel}
-									onValueChange={setSelectedModel}
-									defaultLabel="Default model"
-									triggerClassName={`${PILL_BUTTON_CLASS} px-1.5 gap-1 text-foreground w-auto max-w-[160px]`}
-								/>
+								</motion.div>
 							)}
-							{effortSupport && (
-								<AgentModelSelect
-									models={effortSupport.efforts}
-									value={selectedEffort}
-									onValueChange={setSelectedEffort}
-									defaultLabel="Default effort"
-									triggerClassName={`${PILL_BUTTON_CLASS} px-1.5 gap-1 text-foreground w-auto max-w-[160px]`}
-								/>
-							)}
-						</PromptInputTools>
-						<div className="flex items-center gap-2">
-							<IssueLinkCommand
-								onSelect={addLinkedIssue}
-								tooltipLabel="Link issue"
-							>
-								<PromptInputButton
-									aria-label="Link issue"
-									className={`${PILL_BUTTON_CLASS} w-[22px]`}
-								>
-									<SiLinear className="size-3.5" />
-								</PromptInputButton>
-							</IssueLinkCommand>
-							<GitHubIssueLinkCommand
-								onSelect={(issue) =>
-									addLinkedGitHubIssue(
-										issue.issueNumber,
-										issue.title,
-										issue.url,
-										issue.state,
-									)
-								}
-								projectId={projectId}
-								hostId={draft.hostId}
-								tooltipLabel="Link GitHub issue"
-							>
-								<PromptInputButton
-									aria-label="Link GitHub issue"
-									className={`${PILL_BUTTON_CLASS} w-[22px]`}
-								>
-									<GoIssueOpened className="size-3.5" />
-								</PromptInputButton>
-							</GitHubIssueLinkCommand>
-							<PRLinkCommand
-								onSelect={setLinkedPR}
-								projectId={projectId}
-								hostId={draft.hostId}
-								tooltipLabel="Link pull request"
-							>
-								<PromptInputButton
-									aria-label="Link pull request"
-									className={`${PILL_BUTTON_CLASS} w-[22px]`}
-								>
-									<LuGitPullRequest className="size-3.5" />
-								</PromptInputButton>
-							</PRLinkCommand>
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<PromptInputButton
-										aria-label="Add attachment"
-										className={`${PILL_BUTTON_CLASS} w-[22px]`}
-										onClick={() => attachments.openFileDialog()}
-									>
-										<PaperclipIcon className="size-3.5" />
-									</PromptInputButton>
-								</TooltipTrigger>
-								<TooltipContent side="bottom">Add attachment</TooltipContent>
-							</Tooltip>
-							<PromptInputSubmit
-								className="size-[22px] rounded-full border border-transparent bg-foreground/10 shadow-none p-[5px] hover:bg-foreground/20"
-								disabled={needsSetup || isCreating}
-								onClick={(e) => {
-									e.preventDefault();
-									handleSubmit();
-								}}
-							>
-								{isCreating ? (
-									<Spinner className="size-3.5 text-muted-foreground" />
-								) : (
-									<ArrowUpIcon className="size-3.5 text-muted-foreground" />
+					</AnimatePresence>
+					<PromptInput
+						onSubmit={handleSubmit}
+						multiple
+						globalDrop
+						maxFiles={5}
+						maxFileSize={10 * 1024 * 1024}
+						onError={(error) => toast.error(error.message)}
+						className="[&>[data-slot=input-group]]:rounded-[13px] [&>[data-slot=input-group]]:border-[0.5px] [&>[data-slot=input-group]]:shadow-none [&>[data-slot=input-group]]:bg-foreground/[0.02]"
+					>
+						{(draft.linkedPR ||
+							draft.linkedIssues.length > 0 ||
+							visibleFiles.length > 0) && (
+							<div className="flex items-start gap-2 self-stretch overflow-x-auto px-3 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+								{draft.linkedPR && (
+									<div className="shrink-0">
+										<LinkedPRPill
+											prNumber={draft.linkedPR.prNumber}
+											title={draft.linkedPR.title}
+											state={draft.linkedPR.state}
+											onRemove={removeLinkedPR}
+										/>
+									</div>
 								)}
-							</PromptInputSubmit>
+								{draft.linkedIssues.map((issue) => (
+									<div key={issue.url ?? issue.slug} className="shrink-0">
+										{issue.source === "github" && issue.number != null ? (
+											<LinkedGitHubIssuePill
+												issueNumber={issue.number}
+												title={issue.title}
+												state={issue.state ?? "open"}
+												onRemove={() => removeLinkedIssue(issue.slug)}
+											/>
+										) : (
+											<LinkedIssuePill
+												slug={issue.slug}
+												title={issue.title}
+												url={issue.url}
+												taskId={issue.taskId}
+												onRemove={() => removeLinkedIssue(issue.slug)}
+											/>
+										)}
+									</div>
+								))}
+								{visibleFiles.map((file) => {
+									const sourcePath = file.filename
+										? newWorkspaceAttachmentPaths.get(file.filename) || null
+										: null;
+									return (
+										<AttachmentCard
+											key={file.id}
+											file={file}
+											hostUrl={launchHostUrl}
+											onRemove={(id) => attachments.remove(id)}
+											onOpenFile={
+												sourcePath
+													? () => openInFinderMutation.mutate(sourcePath)
+													: null
+											}
+										/>
+									);
+								})}
+							</div>
+						)}
+						<MarkdownEditor
+							key={`${resetKey}-${promptSeed}-${placeholderRoll}`}
+							content={draft.prompt}
+							onChange={(markdown) => updateDraft({ prompt: markdown })}
+							onPasteFiles={(files) => attachments.add(files)}
+							onEnterSubmit={handleSubmit}
+							autoFocus={draft.prompt ? "end" : "start"}
+							placeholder={promptPlaceholder}
+							className="flex flex-col min-h-[80px] max-h-[min(50vh,600px)] px-3 pt-3"
+							editorClassName="overflow-y-auto text-sm"
+							features={{
+								slashCommand: false,
+								emoji: false,
+								fileMention: false,
+								bubbleMenu: false,
+							}}
+						/>
+						<PromptInputFooter>
+							<PromptInputTools className="gap-1.5">
+								<AgentSelect<WorkspaceCreateAgent>
+									agents={v2Agents}
+									value={selectedAgent}
+									placeholder={t({
+										id: "dashboard.newWorkspaceModal.newWorkspaceScreen.noAgent",
+										message: "No agent",
+									})}
+									onValueChange={setSelectedAgent}
+									onBeforeConfigureAgents={closeModal}
+									triggerClassName={`${PILL_BUTTON_CLASS} px-1.5 gap-1 text-foreground w-auto max-w-[160px]`}
+									iconClassName="size-3 object-contain"
+									allowNone
+									noneLabel={t({
+										id: "dashboard.newWorkspaceModal.newWorkspaceScreen.noAgent",
+										message: "No agent",
+									})}
+									noneValue="none"
+								/>
+								{modelSupport && (
+									<AgentModelSelect
+										models={modelSupport.models}
+										value={selectedModel}
+										onValueChange={setSelectedModel}
+										defaultLabel={t({
+											id: "dashboard.newWorkspaceModal.newWorkspaceScreen.defaultModel",
+											message: "Default model",
+										})}
+										triggerClassName={`${PILL_BUTTON_CLASS} px-1.5 gap-1 text-foreground w-auto max-w-[160px]`}
+									/>
+								)}
+								{effortSupport && (
+									<AgentModelSelect
+										models={effortOptions}
+										value={selectedEffort}
+										onValueChange={setSelectedEffort}
+										defaultLabel={t({
+											id: "dashboard.newWorkspaceModal.newWorkspaceScreen.defaultEffort",
+											message: "Default effort",
+										})}
+										triggerClassName={`${PILL_BUTTON_CLASS} px-1.5 gap-1 text-foreground w-auto max-w-[160px]`}
+									/>
+								)}
+								{modeSupport && (
+									<AgentModelSelect
+										models={modeSupport.modes}
+										value={selectedMode}
+										onValueChange={setSelectedMode}
+										defaultLabel={t({
+											id: "dashboard.newWorkspaceModal.newWorkspaceScreen.directMode",
+											message: "Direct mode",
+										})}
+										triggerClassName={`${PILL_BUTTON_CLASS} px-1.5 gap-1 text-foreground w-auto max-w-[160px]`}
+									/>
+								)}
+							</PromptInputTools>
+							<div className="flex items-center gap-2">
+								<IssueLinkCommand
+									onSelect={addLinkedIssue}
+									tooltipLabel={t({
+										id: "dashboard.newWorkspaceModal.newWorkspaceScreen.linkIssue",
+										message: "Link issue",
+									})}
+								>
+									<PromptInputButton
+										aria-label={t({
+											id: "dashboard.newWorkspaceModal.newWorkspaceScreen.linkIssue",
+											message: "Link issue",
+										})}
+										className={`${PILL_BUTTON_CLASS} w-[22px]`}
+									>
+										<SiLinear className="size-3.5" />
+									</PromptInputButton>
+								</IssueLinkCommand>
+								<GitHubIssueLinkCommand
+									onSelect={(issue) =>
+										addLinkedGitHubIssue(
+											issue.issueNumber,
+											issue.title,
+											issue.url,
+											issue.state,
+										)
+									}
+									projectId={projectId}
+									hostId={draft.hostId}
+									tooltipLabel={t({
+										id: "dashboard.newWorkspaceModal.newWorkspaceScreen.linkGitHubIssue",
+										message: "Link GitHub issue",
+									})}
+								>
+									<PromptInputButton
+										aria-label={t({
+											id: "dashboard.newWorkspaceModal.newWorkspaceScreen.linkGitHubIssue",
+											message: "Link GitHub issue",
+										})}
+										className={`${PILL_BUTTON_CLASS} w-[22px]`}
+									>
+										<GoIssueOpened className="size-3.5" />
+									</PromptInputButton>
+								</GitHubIssueLinkCommand>
+								<PRLinkCommand
+									onSelect={setLinkedPR}
+									projectId={projectId}
+									hostId={draft.hostId}
+									tooltipLabel={t({
+										id: "dashboard.newWorkspaceModal.newWorkspaceScreen.linkPullRequest",
+										message: "Link pull request",
+									})}
+								>
+									<PromptInputButton
+										aria-label={t({
+											id: "dashboard.newWorkspaceModal.newWorkspaceScreen.linkPullRequest",
+											message: "Link pull request",
+										})}
+										className={`${PILL_BUTTON_CLASS} w-[22px]`}
+									>
+										<LuGitPullRequest className="size-3.5" />
+									</PromptInputButton>
+								</PRLinkCommand>
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<PromptInputButton
+											aria-label={t({
+												id: "dashboard.newWorkspaceModal.newWorkspaceScreen.addAttachment",
+												message: "Add attachment",
+											})}
+											className={`${PILL_BUTTON_CLASS} w-[22px]`}
+											onClick={() => attachments.openFileDialog()}
+										>
+											<PaperclipIcon className="size-3.5" />
+										</PromptInputButton>
+									</TooltipTrigger>
+									<TooltipContent side="bottom">
+										<Trans id="dashboard.newWorkspaceModal.newWorkspaceScreen.addAttachment">
+											Add attachment
+										</Trans>
+									</TooltipContent>
+								</Tooltip>
+								<PromptInputSubmit
+									className="size-[22px] rounded-full border border-transparent bg-foreground/10 shadow-none p-[5px] hover:bg-foreground/20"
+									disabled={needsSetup || isCreating}
+									onClick={(e) => {
+										e.preventDefault();
+										handleSubmit();
+									}}
+								>
+									{isCreating ? (
+										<Spinner className="size-3.5 text-muted-foreground" />
+									) : (
+										<ArrowUpIcon className="size-3.5 text-muted-foreground" />
+									)}
+								</PromptInputSubmit>
+							</div>
+						</PromptInputFooter>
+					</PromptInput>
+					<div className="mt-2 flex items-center justify-between gap-2">
+						<div className="flex min-w-0 flex-1 items-center gap-2">
+							<DevicePicker
+								hostId={draft.hostId}
+								onSelectHostId={(next) => {
+									setLastHostId(next);
+									updateDraft({ hostId: next });
+								}}
+							/>
+							{draft.hostId !== CLOUD_HOST_ID && (
+								<ProjectPickerPill
+									selectedProject={selectedProject}
+									projects={projects}
+									isSessionSelected={draft.isSession}
+									onSelectProject={(selectedProjectId) => {
+										if (selectedProjectId === null) {
+											selectSession();
+											return;
+										}
+										setLastProjectId(selectedProjectId);
+										selectProject(selectedProjectId);
+									}}
+								/>
+							)}
+							{draft.hostId === CLOUD_HOST_ID && (
+								<EnvironmentPickerPill
+									selectedEnvironment={selectedEnvironment}
+									environments={environmentOptions}
+									onSelectEnvironment={(next) =>
+										updateDraft({ environmentId: next })
+									}
+								/>
+							)}
+							{draft.linkedPR ? (
+								<span className="flex items-center gap-1 text-xs text-muted-foreground">
+									<LuGitPullRequest className="size-3 shrink-0" />
+									<Trans id="dashboard.newWorkspaceModal.newWorkspaceScreen.basedOffPr">
+										based off PR #{draft.linkedPR.prNumber}
+									</Trans>
+								</span>
+							) : draft.isSession ? null : (
+								<CompareBaseBranchPicker {...pickerProps} />
+							)}
 						</div>
-					</PromptInputFooter>
-				</PromptInput>
-				<div className="mt-2 flex items-center justify-between gap-2">
-					<div className="flex min-w-0 flex-1 items-center gap-2">
-						<DevicePicker
-							hostId={draft.hostId}
-							onSelectHostId={(next) => {
-								setLastHostId(next);
-								updateDraft({ hostId: next });
-							}}
-						/>
-						<ProjectPickerPill
-							selectedProject={selectedProject}
-							projects={projects}
-							isSessionSelected={draft.isSession}
-							onSelectProject={(selectedProjectId) => {
-								if (selectedProjectId === null) {
-									selectSession();
-									return;
-								}
-								setLastProjectId(selectedProjectId);
-								selectProject(selectedProjectId);
-							}}
-						/>
-						{draft.linkedPR ? (
-							<span className="flex items-center gap-1 text-xs text-muted-foreground">
-								<LuGitPullRequest className="size-3 shrink-0" />
-								based off PR #{draft.linkedPR.prNumber}
-							</span>
-						) : draft.isSession ? null : (
-							<CompareBaseBranchPicker {...pickerProps} />
+						{needsSetup && (
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								className="h-6 px-2 text-[11px] text-amber-500 hover:text-amber-500"
+								onClick={handleGoToSetup}
+							>
+								<Trans id="dashboard.newWorkspaceModal.newWorkspaceScreen.setUpProject">
+									Set up project…
+								</Trans>
+							</Button>
 						)}
 					</div>
-					{needsSetup && (
-						<Button
-							type="button"
-							variant="outline"
-							size="sm"
-							className="h-6 px-2 text-[11px] text-amber-500 hover:text-amber-500"
-							onClick={handleGoToSetup}
-						>
-							Set up project…
-						</Button>
-					)}
+					<SymmetricResizeHandles
+						currentWidth={composerWidth ?? NEW_WORKSPACE_SCREEN_DEFAULT_WIDTH}
+						minWidth={NEW_WORKSPACE_SCREEN_MIN_WIDTH}
+						maxWidth={NEW_WORKSPACE_SCREEN_MAX_WIDTH}
+						onWidthChange={setLiveComposerWidth}
+						onWidthCommit={(width) => {
+							setStoredComposerWidth(width);
+							setLiveComposerWidth(null);
+						}}
+						onReset={() => {
+							setStoredComposerWidth(null);
+							setLiveComposerWidth(null);
+						}}
+					/>
 				</div>
 			</div>
 		</div>

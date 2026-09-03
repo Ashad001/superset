@@ -1,3 +1,5 @@
+import type { MessageDescriptor } from "@lingui/core";
+import { i18n } from "@superset/i18n";
 import type { ComponentType } from "react";
 import type { SharedFileDocument } from "../../../../../state/fileDocumentStore";
 
@@ -19,7 +21,9 @@ export const PRIORITY_RANK: Record<Priority, number> = {
 	option: 1,
 };
 
-export type FileViewLabel = string | ((filePath: string) => string);
+export type FileViewLabel =
+	| MessageDescriptor
+	| ((filePath: string) => MessageDescriptor);
 
 export interface FileView {
 	id: string;
@@ -38,8 +42,18 @@ export interface ViewProps {
 	isActive: boolean;
 	onChangeView: (viewId: string) => void;
 	onForceView: (viewId: string) => void;
+	/**
+	 * MarkdownPreviewView-specific: whether it should render its own inline
+	 * "front matter hidden" notice. Defaults to true; hosts with their own
+	 * toolbar (e.g. the skill editor's FileEditPane) pass false and show an
+	 * equivalent hint there instead, so the two don't duplicate. Other views
+	 * ignore this.
+	 */
+	showFrontMatterNote?: boolean;
 }
 
 export function resolveViewLabel(view: FileView, filePath: string): string {
-	return typeof view.label === "function" ? view.label(filePath) : view.label;
+	return i18n._(
+		typeof view.label === "function" ? view.label(filePath) : view.label,
+	);
 }

@@ -1,8 +1,11 @@
+import { useLingui } from "@lingui/react/macro";
 import type { RendererContext } from "@superset/panes";
+import { FEATURE_FLAGS } from "@superset/shared/constants";
 import { toast } from "@superset/ui/sonner";
 import { cn } from "@superset/ui/utils";
 import { workspaceTrpc } from "@superset/workspace-client";
 import "@xterm/xterm/css/xterm.css";
+import { useFeatureFlagEnabled } from "posthog-js/react";
 import {
 	useCallback,
 	useEffect,
@@ -11,6 +14,7 @@ import {
 	useState,
 	useSyncExternalStore,
 } from "react";
+import { env } from "renderer/env.renderer";
 import { useHotkey } from "renderer/hotkeys";
 import {
 	actionLabel,
@@ -33,9 +37,12 @@ import type {
 	PaneViewerData,
 	TerminalPaneData,
 } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/types";
+import { openPagePaneInStore } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/utils/openPagePaneInStore";
 import { openUrlInV2Workspace } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/utils/openUrlInV2Workspace";
 import { useWorkspaceWsUrl } from "renderer/routes/_authenticated/_dashboard/v2-workspace/providers/WorkspaceTrpcProvider/WorkspaceTrpcProvider";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
+import { useHostWorkspaces } from "renderer/routes/_authenticated/providers/HostWorkspacesProvider";
+import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { ScrollToBottomButton } from "renderer/screens/main/components/WorkspaceView/ContentView/TabsContent/Terminal/ScrollToBottomButton";
 import { TerminalSearch } from "renderer/screens/main/components/WorkspaceView/ContentView/TabsContent/Terminal/TerminalSearch";
 import { useTheme } from "renderer/stores/theme";
@@ -43,7 +50,9 @@ import { resolveTerminalThemeType } from "renderer/stores/theme/utils";
 import { isWithinWorkspacePath } from "shared/absolute-paths";
 import { getImageMimeType } from "shared/file-types";
 import { TerminalAgentAutoResume } from "./components/TerminalAgentAutoResume";
+import { TerminalCopiedIndicator } from "./components/TerminalCopiedIndicator";
 import { TerminalRichInput } from "./components/TerminalRichInput";
+import { useCopyOnSelect } from "./hooks/useCopyOnSelect";
 import { useLinkClickHint } from "./hooks/useLinkClickHint";
 import { type HoveredLink, useLinkHoverState } from "./hooks/useLinkHoverState";
 import { useTerminalAppearance } from "./hooks/useTerminalAppearance";
@@ -52,7 +61,9 @@ import {
 	terminalRichInputOpenStore,
 	useTerminalRichInputOpen,
 } from "./richInputOpenStore";
+import { PasteUploadLimitError, uploadPastedFiles } from "./uploadPastedFiles";
 import { shellEscapePaths } from "./utils";
+import { parseSupersetPageUrl } from "./utils/parseSupersetPageUrl";
 
 interface TerminalPaneProps {
 	ctx: RendererContext<PaneViewerData>;
@@ -67,10 +78,12 @@ export function TerminalPane({
 	onOpenFile,
 	onRevealPath,
 }: TerminalPaneProps) {
+	const { t } = useLingui();
 	const filePolicy = useTerminalFilePolicy();
 	const urlPolicy = useTerminalUrlPolicy();
 	const imagePolicy = useTerminalImagePolicy();
 	const folderPolicy = useTerminalFolderPolicy();
+	const isPagesEnabled = useFeatureFlagEnabled(FEATURE_FLAGS.PAGES) ?? false;
 	const {
 		hoveredLink,
 		onHover: onLinkHover,
@@ -350,13 +363,20 @@ export function TerminalPane({
 						electronTrpcClient.external.openUrl.mutate(url).catch((error) => {
 							console.error("[v2 Terminal] Failed to open URL:", url, error);
 						});
-					} else {
-						openUrlInV2Workspace({
-							store: ctx.store,
-							target: action === "newTab" ? "new-tab" : "current-tab",
-							url,
-						});
+						return;
 					}
+					const pageSlug = isPagesEnabled
+						? parseSupersetPageUrl(url, env.NEXT_PUBLIC_WEB_URL)
+						: null;
+					if (pageSlug) {
+						openPagePaneInStore(ctx.store, { slug: pageSlug });
+						return;
+					}
+					openUrlInV2Workspace({
+						store: ctx.store,
+						target: action === "newTab" ? "new-tab" : "current-tab",
+						url,
+					});
 				},
 				// An agent hyperlinks an attachment it wrote to disk — Claude Code's
 				// "[Image #22]" carries file:///…/image-cache/<session>/22.png. Images
@@ -406,6 +426,98 @@ export function TerminalPane({
 		urlPolicy,
 		imagePolicy,
 		folderPolicy,
+		isPagesEnabled,
+	]);
+
+	// --- Remote image paste ---
+	// The default paste path forwards Ctrl+V and lets the TUI read the OS
+	// clipboard — which only exists on the machine the PTY runs on. When the
+	// workspace lives on another host (relay-reached machine, cloud sandbox),
+	// ship the clipboard bytes there via filesystem.writeFile and paste the
+	// resulting paths instead. Local workspaces keep the Ctrl+V forward, which
+	// lets TUIs attach the image natively.
+	const { machineId } = useLocalHostService();
+	const hostWorkspaces = useHostWorkspaces();
+	const workspaceHostId = hostWorkspaces.workspaces.find(
+		(w) => w.id === workspaceId,
+	)?.hostId;
+	// A cloud sandbox workspace has no host row, so "known list is ready and
+	// the workspace isn't in it" also means remote. Until the list is ready
+	// the override stays unset and paste falls back to the local behavior.
+	const isRemoteHost =
+		hostWorkspaces.isReady &&
+		Boolean(machineId) &&
+		workspaceHostId !== machineId;
+
+	const writeFileMutation = workspaceTrpc.filesystem.writeFile.useMutation();
+	const createDirectoryMutation =
+		workspaceTrpc.filesystem.createDirectory.useMutation();
+	const writeFileRef = useRef(writeFileMutation.mutateAsync);
+	writeFileRef.current = writeFileMutation.mutateAsync;
+	const createDirectoryRef = useRef(createDirectoryMutation.mutateAsync);
+	createDirectoryRef.current = createDirectoryMutation.mutateAsync;
+
+	// Fire-and-forget: ship files to the workspace, then paste the paths.
+	const uploadAndPasteFiles = useCallback(
+		(files: File[], worktree: string) => {
+			void (async () => {
+				try {
+					const paths = await uploadPastedFiles({
+						deps: {
+							createDirectory: (input) => createDirectoryRef.current(input),
+							writeFile: (input) => writeFileRef.current(input),
+						},
+						workspaceId,
+						worktreePath: worktree,
+						files,
+					});
+					terminalRuntimeRegistry.paste(
+						terminalId,
+						shellEscapePaths(paths),
+						terminalInstanceId,
+					);
+				} catch (error) {
+					console.error("[v2 Terminal] remote file upload failed", error);
+					toast.error(
+						error instanceof PasteUploadLimitError
+							? error.message
+							: files.length === 1
+								? t({
+										id: "workspace.terminalPane.pasteUploadFailedSingle",
+										message: "Failed to send the file to the remote workspace",
+									})
+								: t({
+										id: "workspace.terminalPane.pasteUploadFailedMultiple",
+										message: "Failed to send the files to the remote workspace",
+									}),
+					);
+				}
+			})();
+		},
+		[terminalId, terminalInstanceId, workspaceId, t],
+	);
+
+	useEffect(() => {
+		if (!isRemoteHost || !worktreePath) return;
+
+		terminalRuntimeRegistry.setImagePasteOverride(
+			terminalId,
+			(files) => uploadAndPasteFiles(files, worktreePath),
+			terminalInstanceId,
+		);
+		return () => {
+			terminalRuntimeRegistry.setImagePasteOverride(
+				terminalId,
+				null,
+				terminalInstanceId,
+			);
+		};
+	}, [
+		terminalId,
+		terminalInstanceId,
+		worktreePath,
+		isRemoteHost,
+		uploadAndPasteFiles,
 	]);
 
 	useTerminalInterruptClear({
@@ -414,6 +526,8 @@ export function TerminalPane({
 		workspaceId,
 		connectionState,
 	});
+
+	useCopyOnSelect({ terminalId, terminalInstanceId, connectionState });
 
 	useHotkey(
 		"CLEAR_TERMINAL",
@@ -503,6 +617,31 @@ export function TerminalPane({
 		dragCounterRef.current = 0;
 		setIsDropActive(false);
 		if (connectionState === "closed") return;
+
+		// Dropped OS paths are local paths — meaningless on the machine a
+		// remote workspace's PTY runs on. When every dropped entry is a plain
+		// file, ship the bytes instead. Folders keep the path flow (their File
+		// entries carry no content), which at least preserves today's behavior.
+		if (isRemoteHost && worktreePath) {
+			const items = Array.from(event.dataTransfer.items);
+			const allPlainFiles =
+				items.length > 0 &&
+				items.every(
+					(item) =>
+						item.kind === "file" &&
+						typeof item.webkitGetAsEntry === "function" &&
+						item.webkitGetAsEntry()?.isFile === true,
+				);
+			const files = Array.from(event.dataTransfer.files);
+			if (allPlainFiles && files.length > 0) {
+				terminalRuntimeRegistry
+					.getTerminal(terminalId, terminalInstanceId)
+					?.focus();
+				uploadAndPasteFiles(files, worktreePath);
+				return;
+			}
+		}
+
 		const text = resolveDroppedText(event.dataTransfer);
 		if (!text) return;
 		terminalRuntimeRegistry
@@ -532,6 +671,7 @@ export function TerminalPane({
 					style={{ backgroundColor: appearance.background }}
 				/>
 				<ScrollToBottomButton terminal={terminal} />
+				<TerminalCopiedIndicator terminalInstanceId={terminalInstanceId} />
 				<TerminalAgentAutoResume
 					key={terminalId}
 					workspaceId={workspaceId}

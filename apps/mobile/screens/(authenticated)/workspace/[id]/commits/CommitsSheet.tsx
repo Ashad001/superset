@@ -1,11 +1,13 @@
+import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import { useQueries } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowRight, GitCommitVertical } from "lucide-react-native";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { FlatList, View } from "react-native";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { getHostServiceClientByUrl } from "@/lib/host-service/client";
+import { posthog } from "@/lib/posthog";
 import { useWorkspaceChangeset } from "../hooks/useWorkspaceChangeset";
 import { useWorkspaceCommits } from "../hooks/useWorkspaceCommits";
 import { compactTime } from "../utils/compactTime";
@@ -15,12 +17,17 @@ import { TimelineRow } from "./components/TimelineRow";
 const MAX_STAT_QUERIES = 30;
 
 export function CommitsSheet() {
+	const { t } = useLingui();
 	const { id } = useLocalSearchParams<{ id: string }>();
 	const router = useRouter();
 	const workspaceId = id ?? null;
 
 	const { commits, hostUrl } = useWorkspaceCommits(workspaceId);
 	const { baseBranch } = useWorkspaceChangeset(workspaceId);
+
+	useEffect(() => {
+		posthog.capture("commits_viewed", { workspace_id: workspaceId });
+	}, [workspaceId]);
 
 	const statTargets = useMemo(
 		() => (hostUrl ? commits.slice(0, MAX_STAT_QUERIES) : []),
@@ -65,14 +72,21 @@ export function CommitsSheet() {
 		<>
 			<Stack.Title asChild>
 				<View className="items-center">
-					<Text className="font-semibold text-[17px]">Commits</Text>
+					<Text className="font-semibold text-[17px]">
+						<Trans id="mobile.nav.commits.title">Commits</Trans>
+					</Text>
 					<View className="flex-row items-center gap-1.5">
 						<Icon
 							as={GitCommitVertical}
 							className="text-muted-foreground size-3.5"
 						/>
 						<Text className="text-muted-foreground text-xs">
-							{commits.length === 1 ? "1 Commit" : `${commits.length} Commits`}
+							<Plural
+								id="mobile.commits.count"
+								value={commits.length}
+								one="# Commit"
+								other="# Commits"
+							/>
 						</Text>
 						{baseBranch ? (
 							<>
@@ -91,7 +105,10 @@ export function CommitsSheet() {
 			<Stack.Toolbar placement="left">
 				<Stack.Toolbar.Button
 					icon="xmark"
-					accessibilityLabel="Close"
+					accessibilityLabel={t({
+						id: "mobile.common.close",
+						message: "Close",
+					})}
 					onPress={() => router.back()}
 				/>
 			</Stack.Toolbar>
@@ -144,7 +161,9 @@ export function CommitsSheet() {
 				ListEmptyComponent={
 					<View className="items-center py-16">
 						<Text className="text-muted-foreground text-sm">
-							No commits on this branch yet.
+							<Trans id="mobile.commits.empty">
+								No commits on this branch yet.
+							</Trans>
 						</Text>
 					</View>
 				}

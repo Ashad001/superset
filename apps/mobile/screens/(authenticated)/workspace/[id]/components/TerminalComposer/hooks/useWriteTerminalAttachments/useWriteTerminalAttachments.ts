@@ -1,11 +1,13 @@
+import { i18n } from "@superset/i18n";
+import {
+	assignAttachmentFileName,
+	WORKSPACE_ATTACHMENTS_DIR,
+} from "@superset/shared/workspace-attachments";
 import { useMutation } from "@tanstack/react-query";
 import { File } from "expo-file-system";
 import { Alert } from "react-native";
 import type { PromptInputAttachmentItem } from "@/components/ai-elements/prompt-input";
 import { getHostServiceClientByUrl } from "@/lib/host-service/client";
-
-/** Worktree-relative, so the paths read the same to the agent as to the user. */
-const ATTACHMENTS_DIRECTORY = ".superset/attachments";
 
 export interface TerminalAttachmentTarget {
 	workspaceId: string;
@@ -18,41 +20,14 @@ interface WriteArgs {
 	attachments: PromptInputAttachmentItem[];
 }
 
+/**
+ * Generated names keep the uri's extension when the picker gave us no
+ * filename — an extensionless image is one an agent has to guess at.
+ */
 function extensionOf(value: string): string {
 	const name = value.split("?")[0]?.split("/").pop() ?? "";
 	const dot = name.lastIndexOf(".");
 	return dot > 0 ? name.slice(dot) : "";
-}
-
-/**
- * Unique, shell-safe name for one attachment. Falls back to the uri's
- * extension when the picker gave us no filename — an extensionless image is
- * one an agent has to guess at.
- */
-function fileNameFor(
-	attachment: PromptInputAttachmentItem,
-	index: number,
-	used: Set<string>,
-): string {
-	const sanitized = (attachment.name ?? "").replace(/[^a-zA-Z0-9._-]/g, "_");
-	const base = sanitized.trim()
-		? sanitized
-		: `attachment_${index + 1}${extensionOf(attachment.uri)}`;
-
-	if (!used.has(base)) {
-		used.add(base);
-		return base;
-	}
-	const extension = extensionOf(base);
-	const stem = extension ? base.slice(0, -extension.length) : base;
-	let counter = 1;
-	let candidate = `${stem}_${counter}${extension}`;
-	while (used.has(candidate)) {
-		counter += 1;
-		candidate = `${stem}_${counter}${extension}`;
-	}
-	used.add(candidate);
-	return candidate;
 }
 
 /**
@@ -66,7 +41,7 @@ export function useWriteTerminalAttachments() {
 		mutationFn: async ({ target, attachments }: WriteArgs) => {
 			if (attachments.length === 0) return [];
 			const client = getHostServiceClientByUrl(target.hostUrl);
-			const directory = `${target.worktreePath}/${ATTACHMENTS_DIRECTORY}`;
+			const directory = `${target.worktreePath}/${WORKSPACE_ATTACHMENTS_DIR}`;
 			await client.filesystem.createDirectory.mutate({
 				workspaceId: target.workspaceId,
 				absolutePath: directory,
@@ -76,7 +51,12 @@ export function useWriteTerminalAttachments() {
 			const used = new Set<string>();
 			const paths: string[] = [];
 			for (const [index, attachment] of attachments.entries()) {
-				const fileName = fileNameFor(attachment, index, used);
+				const fileName = assignAttachmentFileName({
+					rawName: attachment.name,
+					index,
+					used,
+					fallbackExtension: extensionOf(attachment.uri),
+				});
 				await client.filesystem.writeFile.mutate({
 					workspaceId: target.workspaceId,
 					absolutePath: `${directory}/${fileName}`,
@@ -85,13 +65,16 @@ export function useWriteTerminalAttachments() {
 						data: await new File(attachment.uri).base64(),
 					},
 				});
-				paths.push(`${ATTACHMENTS_DIRECTORY}/${fileName}`);
+				paths.push(`${WORKSPACE_ATTACHMENTS_DIR}/${fileName}`);
 			}
 			return paths;
 		},
 		onError: (error) => {
 			Alert.alert(
-				"Could not attach files",
+				i18n._({
+					id: "mobile.terminal.attachFailed",
+					message: "Could not attach files",
+				}),
 				error instanceof Error ? error.message : String(error),
 			);
 		},

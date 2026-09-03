@@ -1,23 +1,42 @@
+import { msg } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import type { ApprovalRequest, Decision } from "@superset/chat/protocol";
+import { i18n } from "@superset/i18n";
 import { Badge } from "@superset/ui/badge";
 import { Button } from "@superset/ui/button";
 import { ToolContentList } from "../ToolContentList";
 
+const DECISION_ANSWERED = msg({
+	id: "workspace.chat.decisionAnswered",
+	message: "Answered",
+});
+
 function decisionLabel(decision: Decision | undefined): string {
-	if (!decision) return "Answered";
+	if (!decision) return i18n._(DECISION_ANSWERED);
 	switch (decision.type) {
 		case "accept":
-			return "Allowed";
+			return i18n._(
+				msg({ id: "workspace.chat.decisionAllowed", message: "Allowed" }),
+			);
 		case "accept_for_session":
-			return "Allowed for session";
+			return i18n._(
+				msg({
+					id: "workspace.chat.decisionAllowedForSession",
+					message: "Allowed for session",
+				}),
+			);
 		case "decline":
-			return "Denied";
+			return i18n._(
+				msg({ id: "workspace.chat.decisionDenied", message: "Denied" }),
+			);
 		case "cancel":
-			return "Canceled";
+			return i18n._(
+				msg({ id: "workspace.chat.decisionCanceled", message: "Canceled" }),
+			);
 		case "option":
 			return decision.optionId;
 		default:
-			return "Answered";
+			return i18n._(DECISION_ANSWERED);
 	}
 }
 
@@ -33,13 +52,17 @@ export function ApprovalRow({
 		<div
 			className={
 				pending
-					? "flex flex-col gap-2 rounded-lg border border-amber-500/50 bg-amber-500/5 p-3"
+					? "flex flex-col gap-2 rounded-lg border border-warning/50 bg-warning/5 p-3"
 					: "flex flex-col gap-2 rounded-lg border border-border bg-muted/30 p-3"
 			}
 		>
 			<div className="flex items-center gap-2">
 				<span className="text-sm font-medium">{item.title}</span>
-				{item.status === "stale" && <Badge variant="outline">Expired</Badge>}
+				{item.status === "stale" && (
+					<Badge variant="outline">
+						<Trans id="workspace.chat.approvalExpired">Expired</Trans>
+					</Badge>
+				)}
 				{item.status === "answered" && (
 					<Badge variant="secondary">{decisionLabel(item.decision)}</Badge>
 				)}
@@ -70,21 +93,23 @@ export function ApprovalRow({
 							onClick={() => onRespond(item.id, { type: "accept" })}
 							size="sm"
 						>
-							Allow
+							<Trans id="workspace.chat.approvalAllow">Allow</Trans>
 						</Button>
 						<Button
 							onClick={() => onRespond(item.id, { type: "accept_for_session" })}
 							size="sm"
 							variant="outline"
 						>
-							Allow for session
+							<Trans id="workspace.chat.approvalAllowForSession">
+								Allow for session
+							</Trans>
 						</Button>
 						<Button
 							onClick={() => onRespond(item.id, { type: "decline" })}
 							size="sm"
 							variant="outline"
 						>
-							Deny
+							<Trans id="workspace.chat.approvalDeny">Deny</Trans>
 						</Button>
 					</div>
 				))}

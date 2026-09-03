@@ -1,10 +1,10 @@
+import { useLingui } from "@lingui/react/macro";
 import { useMemo } from "react";
-import { env } from "renderer/env.renderer";
+import { useActiveOrganizationId } from "renderer/hooks/useActiveOrganizationId";
 import { useHostsPresence } from "renderer/hooks/useHostsPresence";
 import { authClient } from "renderer/lib/auth-client";
 import { cloudTrpc } from "renderer/lib/cloud-trpc";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
-import { MOCK_ORG_ID } from "shared/constants";
 
 export interface WorkspaceHostOption {
 	id: string;
@@ -27,12 +27,11 @@ interface UseWorkspaceHostOptionsResult {
 }
 
 export function useWorkspaceHostOptions(): UseWorkspaceHostOptionsResult {
+	const { t } = useLingui();
 	const { data: session } = authClient.useSession();
 	const { machineId, activeHostUrl } = useLocalHostService();
 
-	const activeOrganizationId = env.SKIP_ENV_VALIDATION
-		? MOCK_ORG_ID
-		: (session?.session?.activeOrganizationId ?? null);
+	const activeOrganizationId = useActiveOrganizationId();
 	const currentUserId = session?.user?.id ?? null;
 
 	const { data: hostRows = [] } = cloudTrpc.v2Host.list.useQuery(undefined, {
@@ -105,7 +104,14 @@ export function useWorkspaceHostOptions(): UseWorkspaceHostOptionsResult {
 	// Always surface the local device, even if its host row hasn't loaded yet —
 	// the picker is useless without "this device" present.
 	return {
-		currentDeviceName: localHost?.name ?? (machineId ? "This device" : null),
+		currentDeviceName:
+			localHost?.name ??
+			(machineId
+				? t({
+						id: "dashboard.newWorkspaceModal.devicePicker.thisDevice",
+						message: "This device",
+					})
+				: null),
 		localHostId: localHost?.machineId ?? machineId,
 		localHostIsOnline: localHost ? (localHost.isOnline ?? false) : null,
 		activeHostUrl,

@@ -66,13 +66,15 @@ function itemFromCloudRow(
 	return {
 		id: cloud.id,
 		organizationId: cloud.organizationId,
-		projectId: cloud.projectId,
+		// Cloud workspaces have no project; the row shape still wants one.
+		projectId: "",
 		hostId: cloud.id,
 		name: cloud.name,
 		branch: served?.branch ?? cloud.branch,
 		type: "main",
 		createdByUserId: cloud.createdByUserId ?? null,
 		taskId: null,
+		tags: served?.tags ?? [],
 		createdAt: cloud.createdAt,
 		updatedAt: served?.updatedAt ?? cloud.updatedAt,
 		worktreePath: served?.worktreePath ?? "",
@@ -149,22 +151,9 @@ export function useCloudWorkspaceItems(): CloudWorkspaceItemsValue {
 					},
 				);
 			},
-			removeWorkspace: (hostId, workspaceId) => {
-				const key = keyFor(hostId);
-				if (!key) return;
-				queryClient.setQueryData<HostWorkspaceRow[] | undefined>(key, (rows) =>
-					rows?.filter((row) => row.id !== workspaceId),
-				);
-			},
 			invalidateHost: (hostId) => {
 				const key = keyFor(hostId);
 				if (key) void queryClient.invalidateQueries({ queryKey: key });
-			},
-			refetchHost: async (hostId) => {
-				const key = keyFor(hostId);
-				if (!key) return undefined;
-				await queryClient.refetchQueries({ queryKey: key });
-				return queryClient.getQueryData<HostWorkspaceRow[]>(key);
 			},
 		};
 	}, [queryClient]);

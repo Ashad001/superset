@@ -22,11 +22,10 @@
 	"private": true,
 	"scripts": {
 		"predev": "bun scripts/check-dev-ports.ts",
-		"dev": "turbo run dev dev:caddy --filter=@superset/api --filter=@superset/web --filter=@superset/desktop --filter=electric-proxy --filter=//",
+		"dev": "turbo run dev --filter=@superset/api --filter=@superset/web --filter=@superset/desktop --filter=//",
 		"dev:all": "turbo dev --concurrency=15",
 		"predev:desktop": "bun scripts/check-dev-ports.ts",
-		"dev:desktop": "turbo run dev dev:caddy --filter=@superset/api --filter=@superset/desktop --filter=electric-proxy --filter=//",
-		"dev:caddy": "dotenv -- caddy run --config Caddyfile",
+		"dev:desktop": "turbo run dev --filter=@superset/api --filter=@superset/desktop --filter=//",
 		"dev:docs": "turbo dev --filter=@superset/docs",
 		"dev:marketing": "turbo dev --filter=@superset/marketing --filter=@superset/docs",
 		"dev:relay": "turbo dev --filter=@superset/relay",
@@ -35,7 +34,6 @@
 		"build": "turbo build --filter=@superset/desktop",
 		"test": "turbo test --concurrency=2",
 		"lint": "./scripts/lint.sh",
-		"check:desktop-git-env": "./scripts/check-desktop-git-env.sh",
 		"lint:fix": "bunx @biomejs/biome@2.4.2 migrate --write && bunx @biomejs/biome@2.4.2 check --write --unsafe .",
 		"format": "bunx @biomejs/biome@2.4.2 format --write .",
 		"format:check": "bunx @biomejs/biome@2.4.2 format .",
@@ -54,7 +52,10 @@
 		"db:push": "bun run --cwd packages/db push",
 		"db:migrate": "bun run --cwd packages/db migrate",
 		"db:seed-dev": "NODE_ENV=development bun run packages/auth/src/seed-dev.ts",
-		"db:generate:desktop": "bun run --cwd packages/local-db generate"
+		"db:generate:desktop": "bun run --cwd packages/local-db generate",
+		"db:seed-shared-environments": "bun run scripts/sandbox/seed-environments.ts",
+		"sandbox:smoke": "bun packages/trpc/scripts/sandbox-smoke.ts",
+		"sandbox:release": "bun scripts/sandbox/release-environments.ts"
 	},
 	"type": "module",
 	"workspaces": [
@@ -63,12 +64,12 @@
 		"tooling/*"
 	],
 	"overrides": {
-		"@tiptap/extension-dropcursor": "3.21.0",
-		"@tiptap/extension-floating-menu": "3.21.0",
-		"@tiptap/extension-gapcursor": "3.21.0",
-		"@tiptap/extension-list": "3.21.0",
-		"@tiptap/extension-list-keymap": "3.21.0",
-		"@tiptap/extensions": "3.21.0",
+		"@tiptap/extension-dropcursor": "3.30.4",
+		"@tiptap/extension-floating-menu": "3.30.4",
+		"@tiptap/extension-gapcursor": "3.30.4",
+		"@tiptap/extension-list": "3.30.4",
+		"@tiptap/extension-list-keymap": "3.30.4",
+		"@tiptap/extensions": "3.30.4",
 		"@types/hast": "3.0.5",
 		"axios": "1.18.1",
 		"hono": "4.12.34",
@@ -90,6 +91,6 @@
 	"patchedDependencies": {
 		"@xterm/addon-webgl@0.20.0-beta.297": "patches/@xterm%2Faddon-webgl@0.20.0-beta.297.patch",
 		"metro@0.84.4": "patches/metro@0.84.4.patch",
-		"expo-router@56.2.18": "patches/expo-router@56.2.18.patch"
+		"node-pty@1.2.0-beta.14": "patches/node-pty@1.2.0-beta.14.patch"
 	}
 }

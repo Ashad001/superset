@@ -1,5 +1,6 @@
 import type { AppRouter } from "@superset/host-service";
 import type { LayoutNode, Tab, WorkspaceState } from "@superset/panes";
+import { tagFolderScopeInputSchema } from "@superset/shared/workspace-tags";
 import type { inferRouterInputs } from "@trpc/server";
 import { z } from "zod";
 
@@ -119,6 +120,14 @@ export const workspaceRunTerminalStateSchema = z.object({
 	stopRequestedAt: z.number().optional(),
 });
 
+// "changes" and "pages" are retired tabs: the Changes surface moved into the
+// workspace's Changes pane, so persisted rows heal to "files" below.
+export const WORKSPACE_SIDEBAR_TABS = ["files", "review"] as const;
+
+const WORKSPACE_SIDEBAR_TAB_SCHEMA = z.enum(WORKSPACE_SIDEBAR_TABS);
+
+export type WorkspaceSidebarTab = (typeof WORKSPACE_SIDEBAR_TABS)[number];
+
 export const workspaceLocalStateSchema = z.object({
 	workspaceId: z.string().uuid(),
 	createdAt: persistedDateSchema,
@@ -130,10 +139,12 @@ export const workspaceLocalStateSchema = z.object({
 		// project workspace into Sessions).
 		projectId: z.string().uuid().nullable(),
 		tabOrder: z.number().int().default(0),
-		sectionId: z.string().uuid().nullable().default(null),
+		// Widened from uuid: may point at a tag-backed folder's composite
+		// `${projectId}:${tag}` key (written by move-into-derived-folder).
+		sectionId: z.string().min(1).nullable().default(null),
 		changesFilter: changesFilterSchema.default({ kind: "all" }),
 		changesViewMode: z.enum(["folders", "tree"]).default("folders"),
-		activeTab: z.enum(["changes", "files", "review"]).default("changes"),
+		activeTab: WORKSPACE_SIDEBAR_TAB_SCHEMA.default("files"),
 		isHidden: z.boolean().default(false),
 		// Epoch ms when the user pinned this workspace to the sidebar's Pinned
 		// section; null = not pinned. Ordering is pinnedAt ascending.
@@ -177,7 +188,7 @@ const SIDEBAR_STATE_DEFAULTS = {
 	sectionId: null,
 	changesFilter: { kind: "all" },
 	changesViewMode: "folders",
-	activeTab: "changes",
+	activeTab: "files",
 	isHidden: false,
 	pinnedAt: null,
 } as const;
@@ -206,13 +217,24 @@ const WORKSPACE_LOCAL_STATE_OPTIONAL_DEFAULTS = {
  * project-scoped: one level of grouping inside a project.
  */
 export const dashboardSidebarSectionSchema = z.object({
-	sectionId: z.string().uuid(),
-	projectId: z.string().uuid(),
+	// Widened from uuid: tag-backed folders use the composite key
+	// `${projectId}:${tag}` (see utils/workspaceTagFolders). Widening only —
+	// withReadHeal DELETES rows that fail parse, so this schema must keep
+	// accepting every previously persisted shape.
+	sectionId: z.string().min(1),
+	// A project id, or the Sessions tag scope: the Sessions lane stores its
+	// folder rows (order, collapse) under that scope since it has no project.
+	projectId: tagFolderScopeInputSchema,
 	name: z.string().trim().min(1),
 	createdAt: persistedDateSchema,
 	tabOrder: z.number().int().default(0),
 	isCollapsed: z.boolean().default(false),
 	color: z.string().nullable().default(null),
+	// Null = legacy folder that owns members via sidebarState.sectionId; a
+	// non-null tag makes the folder tag-backed (membership from host tags,
+	// sectionId pointers at it are ignored). Default covers rows persisted
+	// before the field existed.
+	tag: z.string().nullable().default(null),
 });
 
 const v2ExecutionModeSchema = z.enum([
@@ -406,12 +428,19 @@ export const v2UserPreferencesSchema = z.object({
 	// live on the row's pinnedToBar like user presets. Pruned against
 	// KNOWN_BUILTIN_PRESET_IDS at heal time so retired ids can't persist.
 	hiddenBuiltinPresetIds: z.array(z.string()).default([]),
+	favoritePageIds: z.array(z.string()).default([]),
+	// Per-project tags whose folders the user hid ("Hide folder" — hides the
+	// grouping without untagging anyone). Bounded by tags a user has ever
+	// hidden; entries for tags no longer in use are harmless and cheap.
+	hiddenTagFolders: z.record(z.string(), z.array(z.string())).default({}),
 });
 
 // The fixed set of built-in preset ids. Consumers derive their id constants
 // from this list (compile-checked via `satisfies`) so the heal-time pruning
 // below can never drop an id that is still in use.
 export const KNOWN_BUILTIN_PRESET_IDS = ["superset-cli"] as const;
+
+export const MAX_FAVORITE_PAGE_IDS = 200;
 
 export type V2UserPreferencesRow = z.infer<typeof v2UserPreferencesSchema>;
 
@@ -433,6 +462,8 @@ export const DEFAULT_V2_USER_PREFERENCES: V2UserPreferencesRow = {
 	deleteLocalBranch: false,
 	showPresetsBar: true,
 	hiddenBuiltinPresetIds: [],
+	favoritePageIds: [],
+	hiddenTagFolders: {},
 };
 
 /**
@@ -468,6 +499,9 @@ export function healWorkspaceLocalState(raw: unknown): WorkspaceLocalStateRow {
 		sidebarState: {
 			...SIDEBAR_STATE_DEFAULTS,
 			...sidebar,
+			activeTab: WORKSPACE_SIDEBAR_TAB_SCHEMA.catch("files").parse(
+				sidebar.activeTab,
+			),
 		} as WorkspaceLocalStateRow["sidebarState"],
 	} as WorkspaceLocalStateRow;
 }
@@ -521,6 +555,9 @@ export function healV2UserPreferences(raw: unknown): V2UserPreferencesRow {
 		).filter((id) =>
 			(KNOWN_BUILTIN_PRESET_IDS as readonly string[]).includes(id),
 		),
+		favoritePageIds: (Array.isArray(r.favoritePageIds) ? r.favoritePageIds : [])
+			.filter((id): id is string => typeof id === "string" && id.length > 0)
+			.slice(-MAX_FAVORITE_PAGE_IDS),
 	};
 }
 

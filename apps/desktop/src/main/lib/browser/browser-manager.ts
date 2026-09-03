@@ -1,6 +1,12 @@
 import { EventEmitter } from "node:events";
+import { i18n } from "@superset/i18n";
 import { clipboard, Menu, webContents } from "electron";
 import { safeOpenExternal } from "main/lib/safe-url";
+import type {
+	DesignModeRect,
+	DesignModeScreenshot,
+	DesignModeSelectionResult,
+} from "shared/browser-design-mode";
 import { chordFromInput } from "shared/hotkey-chord";
 import {
 	forwardSessionFor,
@@ -8,6 +14,10 @@ import {
 	shimIds,
 	tagEventSession,
 } from "./cdp-target-shim";
+import { DesignModeController } from "./design-mode-controller";
+import { captureDesignModeScreenshot } from "./design-mode-screenshot";
+import { buildDesignModeScript } from "./design-mode-script";
+import { markBrowserPanePopup, shouldOpenAsPopup } from "./popup-window";
 
 interface ConsoleEntry {
 	level: "log" | "warn" | "error" | "info" | "debug";
@@ -90,6 +100,47 @@ function isAllowedGuestUrl(url: string): boolean {
 	}
 }
 
+/** Shared by panes and by the popups they open. Returns a detach function. */
+function attachNavigationGuard(wc: Electron.WebContents): () => void {
+	const handler = (event: Electron.Event, url: string) => {
+		if (!isAllowedGuestUrl(url)) event.preventDefault();
+	};
+	wc.on("will-navigate", handler);
+	wc.on("will-redirect", handler);
+	return () => {
+		try {
+			wc.off("will-navigate", handler);
+			wc.off("will-redirect", handler);
+		} catch {
+			// webContents may be destroyed
+		}
+	};
+}
+
+/**
+ * Window options for a popup opened from a guest pane.
+ *
+ * Geometry is deliberately left out: Electron already parses `width`/`height`/
+ * `x`/`y` from the `features` string, and options returned here outrank that
+ * parse — setting them would only re-derive what Chromium worked out, and drift
+ * from it. `partition` is left out for a different reason: the popup inherits
+ * the opener's session, and that shared cookie jar is the point of allowing it.
+ */
+function popupWindowOptions(): Electron.BrowserWindowConstructorOptions {
+	return {
+		autoHideMenuBar: true,
+		// A sign-in window has no business going fullscreen.
+		fullscreenable: false,
+		// `webPreferences` is deliberately not set. Electron inherits the
+		// opener's security preferences and refuses to relax them, so the popup
+		// is already no-Node and context-isolated. Restating them here would be
+		// worse than redundant: if a value we pin ever diverges from the guest's
+		// (`sandbox` especially), Electron isolates the child in its own process
+		// and `window.opener` comes back null, silently breaking the one thing
+		// this popup exists to preserve.
+	};
+}
+
 /**
  * Resolve address-bar input to a URL the guest may load, or throw if it names
  * an explicit disallowed scheme (`file:`, `chrome:`, `data:`, `javascript:`,
@@ -147,6 +198,7 @@ class BrowserManager extends EventEmitter {
 	private contextMenuListeners = new Map<string, () => void>();
 	private beforeInputListeners = new Map<string, () => void>();
 	private navigationListeners = new Map<string, () => void>();
+	private popupListeners = new Map<string, () => void>();
 	private cdpDetachers = new Map<string, () => void>();
 	// Ref-count of in-flight agent work per pane (a live CDP session, a
 	// screenshot capture). While present the guest renderer stays
@@ -156,6 +208,7 @@ class BrowserManager extends EventEmitter {
 	// Canonical chords to suppress in the focused guest and forward for the
 	// renderer to replay. Kept override/layout-aware by the renderer.
 	private forwardableChords = new Set<string>();
+	private designMode = new DesignModeController();
 
 	setForwardableChords(chords: string[]): void {
 		this.forwardableChords = new Set(chords);
@@ -171,6 +224,7 @@ class BrowserManager extends EventEmitter {
 				this.contextMenuListeners,
 				this.beforeInputListeners,
 				this.navigationListeners,
+				this.popupListeners,
 			]) {
 				const cleanup = map.get(paneId);
 				if (cleanup) {
@@ -191,12 +245,7 @@ class BrowserManager extends EventEmitter {
 			// throttled+hidden guest stops presenting frames and CDP input and
 			// screenshots silently break.
 			this.applyThrottling(paneId, wc);
-			wc.setWindowOpenHandler(({ url }) => {
-				if (url && url !== "about:blank") {
-					this.emit(`new-window:${paneId}`, url);
-				}
-				return { action: "deny" as const };
-			});
+			this.setupWindowOpen(paneId, wc);
 			this.setupConsoleCapture(paneId, wc);
 			this.setupContextMenu(paneId, wc);
 			this.setupBeforeInput(paneId, wc);
@@ -214,6 +263,7 @@ class BrowserManager extends EventEmitter {
 			this.contextMenuListeners,
 			this.beforeInputListeners,
 			this.navigationListeners,
+			this.popupListeners,
 		]) {
 			const cleanup = map.get(paneId);
 			if (cleanup) {
@@ -222,6 +272,7 @@ class BrowserManager extends EventEmitter {
 			}
 		}
 		this.cdpDetachers.get(paneId)?.();
+		this.designMode.cancel(paneId, "destroyed");
 		this.panes.delete(paneId);
 		this.consoleLogs.delete(paneId);
 		// Tell subscribers when a live wake dies with the pane, so the renderer
@@ -392,11 +443,16 @@ class BrowserManager extends EventEmitter {
 			cleanup();
 			onDetach(reason);
 		};
+		// Once the webContents is destroyed, any wc.debugger touch throws
+		// synchronously ("Object has been destroyed") — so every path below
+		// checks isDestroyed() before reaching for it.
 		const cleanup = () => {
 			if (closed) return;
 			closed = true;
-			wc.debugger.off("message", handleMessage);
-			wc.debugger.off("detach", handleDetach);
+			if (!wc.isDestroyed()) {
+				wc.debugger.off("message", handleMessage);
+				wc.debugger.off("detach", handleDetach);
+			}
 			this.cdpDetachers.delete(paneId);
 			releaseWake();
 		};
@@ -405,10 +461,11 @@ class BrowserManager extends EventEmitter {
 
 		const detach = () => {
 			cleanup();
+			if (wc.isDestroyed()) return;
 			try {
 				wc.debugger.detach();
 			} catch {
-				// webContents may be destroyed
+				// debugger may already be detached
 			}
 		};
 		// The forced path (pane unregistered while a client is attached) must
@@ -422,6 +479,17 @@ class BrowserManager extends EventEmitter {
 
 		return {
 			send: (rawMessage: string) => {
+				if (closed) return;
+				// A bridge message can arrive after the guest was torn down (pane
+				// closed while an agent's CDP client was mid-session). Close the
+				// session the way the forced-detach path does instead of letting
+				// the synchronous destroyed-webContents throw escape the ws
+				// message handler and take down the main process (DESKTOP-ZS).
+				if (wc.isDestroyed()) {
+					detach();
+					onDetach("pane closed");
+					return;
+				}
 				let parsed: {
 					id?: number;
 					method?: string;
@@ -614,10 +682,13 @@ class BrowserManager extends EventEmitter {
 		wc.loadURL(resolved);
 	}
 
-	async screenshot(paneId: string): Promise<string> {
+	async screenshot(
+		paneId: string,
+	): Promise<{ image: Electron.NativeImage; url: string }> {
 		const image = await this.capturePageImage(paneId);
 		clipboard.writeImage(image);
-		return image.toPNG().toString("base64");
+		const wc = this.getWebContents(paneId);
+		return { image, url: wc?.getURL() ?? "" };
 	}
 
 	/** Screenshot for programmatic callers — must not clobber the clipboard. */
@@ -681,29 +752,180 @@ class BrowserManager extends EventEmitter {
 		return this.consoleLogs.get(paneId) ?? [];
 	}
 
+	/**
+	 * Enable/disable design mode on a pane. Enabling injects the element-picker
+	 * overlay into the guest; disabling cancels any in-flight selection and
+	 * tears the overlay down. Re-injection is idempotent.
+	 */
+	async setDesignMode(paneId: string, enabled: boolean): Promise<boolean> {
+		const wc = this.getWebContents(paneId);
+		if (!wc) return false;
+		if (!enabled) {
+			const hadActiveOp = this.designMode.hasActiveOp(paneId);
+			this.designMode.cancel(paneId, "user");
+			// Cancelling an active op already injects the teardown; only a bare
+			// overlay (selection settled, composer showing) still needs one.
+			if (hadActiveOp) return true;
+			try {
+				await wc.executeJavaScript(buildDesignModeScript("teardown"));
+				return true;
+			} catch {
+				return false;
+			}
+		}
+		try {
+			await wc.executeJavaScript(buildDesignModeScript("arm"));
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	/** Await one design-mode element selection; resolves exactly once. */
+	awaitDesignSelection(
+		paneId: string,
+		opId: string,
+	): Promise<DesignModeSelectionResult> {
+		const wc = this.getWebContents(paneId);
+		if (!wc) {
+			return Promise.resolve({
+				opId,
+				kind: "error",
+				reason: `No webContents for pane ${paneId}`,
+			});
+		}
+		return this.designMode.awaitSelection(paneId, opId, wc);
+	}
+
+	cancelDesignSelection(paneId: string): void {
+		this.designMode.cancel(paneId, "user");
+	}
+
+	/** Screenshot of the guest cropped to a selected element's viewport rect. */
+	async captureDesignScreenshot(
+		paneId: string,
+		rect: DesignModeRect,
+	): Promise<DesignModeScreenshot | null> {
+		const wc = this.getWebContents(paneId);
+		if (!wc) return null;
+		// capturePageImage brings the agent wake + per-attempt timeout + retry —
+		// a bare capturePage() hangs on a pane that goes hidden mid-capture.
+		return captureDesignModeScreenshot(rect, wc, () =>
+			this.capturePageImage(paneId),
+		);
+	}
+
 	openDevTools(paneId: string): void {
 		const wc = this.getWebContents(paneId);
 		if (!wc) return;
 		wc.openDevTools({ mode: "detach" });
 	}
 
+	/**
+	 * Emulate a fixed device viewport (Chrome's "device toolbar"), or clear the
+	 * emulation when `params` is null. Device metrics live on the main-process
+	 * `WebContents`, not the renderer-side `<webview>` tag, so this is the one
+	 * viewport control that can't be done directly from the registry.
+	 */
+	setDeviceEmulation(
+		paneId: string,
+		params: { width: number; height: number } | null,
+	): void {
+		const wc = this.getWebContents(paneId);
+		if (!wc) return;
+		if (!params) {
+			wc.disableDeviceEmulation();
+			return;
+		}
+		wc.enableDeviceEmulation({
+			screenPosition: "mobile",
+			screenSize: { width: params.width, height: params.height },
+			viewPosition: { x: 0, y: 0 },
+			deviceScaleFactor: 0,
+			viewSize: { width: params.width, height: params.height },
+			scale: 1,
+		});
+	}
+
 	// Block navigations to disallowed schemes (file:, chrome:, devtools:, …) on
 	// the guest itself, so the policy holds whether the load came from the
 	// toolbar, a link, or a raw CDP `Page.navigate` (which skips sanitizeUrl).
 	private setupNavigationGuard(paneId: string, wc: Electron.WebContents): void {
-		const handler = (event: Electron.Event, url: string) => {
-			if (!isAllowedGuestUrl(url)) event.preventDefault();
+		this.navigationListeners.set(paneId, attachNavigationGuard(wc));
+	}
+
+	private setupWindowOpen(paneId: string, wc: Electron.WebContents): void {
+		wc.setWindowOpenHandler((details) =>
+			this.resolveWindowOpen(paneId, details),
+		);
+		const onCreated = (window: Electron.BrowserWindow) => {
+			this.configurePopupWindow(paneId, window);
 		};
-		wc.on("will-navigate", handler);
-		wc.on("will-redirect", handler);
-		this.navigationListeners.set(paneId, () => {
+		wc.on("did-create-window", onCreated);
+		this.popupListeners.set(paneId, () => {
 			try {
-				wc.off("will-navigate", handler);
-				wc.off("will-redirect", handler);
+				wc.off("did-create-window", onCreated);
 			} catch {
 				// webContents may be destroyed
 			}
 		});
+	}
+
+	/**
+	 * Decide what a guest's `window.open` should do.
+	 *
+	 * A `target="_blank"` link (a tab disposition) keeps the pane behaviour: deny
+	 * the native window and let the renderer open the URL as a split. The one
+	 * exception is an OAuth authorization URL, which arrives with the same
+	 * disposition when a site opens sign-in via a bare `window.open(url)` but
+	 * cannot survive losing its opener — see `shouldOpenAsPopup`.
+	 *
+	 * A real popup has to stay a real popup. `window.open(url, name, "width=…")`
+	 * is how "Sign in with Google" flows work (Firebase `signInWithPopup`, Google
+	 * Identity Services, Auth0): the popup hands its result back through
+	 * `window.opener` and then closes itself. Re-opening that URL as a detached
+	 * pane drops both the opener and the window name, so the flow can never
+	 * complete — the reported symptom is Google bouncing the callback to
+	 * `accounts.google.com/CookieMismatch` (SUPER-1272). Allowing the window also
+	 * keeps it on the opener's session, so it shares the pane's cookie jar.
+	 */
+	private resolveWindowOpen(
+		paneId: string,
+		details: Electron.HandlerDetails,
+	): Electron.WindowOpenHandlerResponse {
+		if (!isAllowedGuestUrl(details.url)) return { action: "deny" };
+		if (shouldOpenAsPopup(details)) {
+			return {
+				action: "allow",
+				// The default, but worth stating: a sign-in popup must not
+				// outlive the page that opened it.
+				outlivesOpener: false,
+				overrideBrowserWindowOptions: popupWindowOptions(),
+			};
+		}
+		this.emit(`new-window:${paneId}`, details.url);
+		return { action: "deny" };
+	}
+
+	/**
+	 * A popup loads arbitrary web content in the pane's session, so it gets the
+	 * pane's scheme guard, and the same window-open policy so the nested consent
+	 * window Google opens mid-flow stays a popup too.
+	 */
+	private configurePopupWindow(
+		paneId: string,
+		window: Electron.BrowserWindow,
+	): void {
+		const wc = window.webContents;
+		markBrowserPanePopup(wc);
+		const detachGuard = attachNavigationGuard(wc);
+		wc.setWindowOpenHandler((details) =>
+			this.resolveWindowOpen(paneId, details),
+		);
+		wc.on("did-create-window", (child) => {
+			this.configurePopupWindow(paneId, child);
+		});
+		window.on("closed", detachGuard);
 	}
 
 	private setupContextMenu(paneId: string, wc: Electron.WebContents): void {
@@ -718,13 +940,19 @@ class BrowserManager extends EventEmitter {
 			if (linkURL) {
 				menuItems.push(
 					{
-						label: "Open Link in Default Browser",
+						label: i18n._({
+							id: "main.browserContextMenu.openLinkExternally",
+							message: "Open Link in Default Browser",
+						}),
 						click: () => {
 							void safeOpenExternal(linkURL);
 						},
 					},
 					{
-						label: "Open Link as New Split",
+						label: i18n._({
+							id: "main.browserContextMenu.openLinkAsSplit",
+							message: "Open Link as New Split",
+						}),
 						click: () =>
 							this.emit(`context-menu-action:${paneId}`, {
 								action: "open-in-split" as const,
@@ -732,7 +960,10 @@ class BrowserManager extends EventEmitter {
 							}),
 					},
 					{
-						label: "Copy Link Address",
+						label: i18n._({
+							id: "main.browserContextMenu.copyLinkAddress",
+							message: "Copy Link Address",
+						}),
 						click: () => clipboard.writeText(linkURL),
 					},
 					{ type: "separator" },
@@ -741,7 +972,10 @@ class BrowserManager extends EventEmitter {
 
 			if (selectionText) {
 				menuItems.push({
-					label: "Copy",
+					label: i18n._({
+						id: "main.browserContextMenu.copy",
+						message: "Copy",
+					}),
 					enabled: editFlags.canCopy,
 					click: () => wc.copy(),
 				});
@@ -749,14 +983,20 @@ class BrowserManager extends EventEmitter {
 
 			if (editFlags.canPaste) {
 				menuItems.push({
-					label: "Paste",
+					label: i18n._({
+						id: "main.browserContextMenu.paste",
+						message: "Paste",
+					}),
 					click: () => wc.paste(),
 				});
 			}
 
 			if (editFlags.canSelectAll) {
 				menuItems.push({
-					label: "Select All",
+					label: i18n._({
+						id: "main.browserContextMenu.selectAll",
+						message: "Select All",
+					}),
 					click: () => wc.selectAll(),
 				});
 			}
@@ -767,17 +1007,26 @@ class BrowserManager extends EventEmitter {
 
 			menuItems.push(
 				{
-					label: "Back",
+					label: i18n._({
+						id: "main.browserContextMenu.back",
+						message: "Back",
+					}),
 					enabled: wc.canGoBack(),
 					click: () => wc.goBack(),
 				},
 				{
-					label: "Forward",
+					label: i18n._({
+						id: "main.browserContextMenu.forward",
+						message: "Forward",
+					}),
 					enabled: wc.canGoForward(),
 					click: () => wc.goForward(),
 				},
 				{
-					label: "Reload",
+					label: i18n._({
+						id: "main.browserContextMenu.reload",
+						message: "Reload",
+					}),
 					click: () => wc.reload(),
 				},
 			);
@@ -786,7 +1035,10 @@ class BrowserManager extends EventEmitter {
 				menuItems.push(
 					{ type: "separator" },
 					{
-						label: "Open Page in Default Browser",
+						label: i18n._({
+							id: "main.browserContextMenu.openPageExternally",
+							message: "Open Page in Default Browser",
+						}),
 						click: () => {
 							if (pageURL && pageURL !== "about:blank") {
 								void safeOpenExternal(pageURL);
@@ -795,7 +1047,10 @@ class BrowserManager extends EventEmitter {
 						enabled: !!pageURL && pageURL !== "about:blank",
 					},
 					{
-						label: "Copy Page URL",
+						label: i18n._({
+							id: "main.browserContextMenu.copyPageUrl",
+							message: "Copy Page URL",
+						}),
 						click: () => {
 							if (pageURL) clipboard.writeText(pageURL);
 						},

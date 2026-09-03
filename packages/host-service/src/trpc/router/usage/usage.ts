@@ -1,29 +1,34 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import {
-	ensureClaudeManagedHooksAt,
-	ensureCodexManagedHooksAt,
-} from "@superset/agent-setup";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { projects, workspaces } from "../../../db/schema";
-import { usageHistoryTask } from "../../../workers/tasks/usage";
+import {
+	leaderboardPayloadTask,
+	usageHistoryTask,
+} from "../../../workers/tasks/usage";
 import { protectedProcedure, queryProcedure, router } from "../../index";
 import { offLoop } from "../../off-loop";
+import {
+	provisionClaudeAccount,
+	provisionCodexAccount,
+} from "./account-provisioning";
+import { fetchAgyAccounts } from "./agy-quota";
 import { fetchClaudeAccounts, readDefaultLoginEmail } from "./claude";
 import { fetchCodexAccounts } from "./codex";
 import {
 	getDefaultAccountSelections,
 	setDefaultAccountSelection,
 } from "./default-account";
+import { fetchGrokAccounts } from "./grok-quota";
+import { countAgentPrsByDay } from "./history/agent-prs";
 import { removeClaudeProfile, removeCodexHome } from "./profile-remove";
-import { seedClaudeProfileOnboarding } from "./profile-seed";
 import { discoverClaudeProfiles, discoverCodexHomes } from "./profiles";
 import type { UsageAccount } from "./types";
 
 /**
- * Provider quota endpoints are undocumented and rate-limit-sensitive, so
+ * Agent quota endpoints are undocumented and rate-limit-sensitive, so
  * results are cached briefly and concurrent callers share one in-flight
  * request. The cached promise is evicted on rejection so a failure does not
  * replay for the whole TTL.
@@ -36,9 +41,12 @@ let cachedQuota: { promise: Promise<UsageAccount[]>; cachedAt: number } | null =
 	null;
 
 function loadAccounts(): Promise<UsageAccount[]> {
-	return Promise.all([fetchClaudeAccounts(), fetchCodexAccounts()]).then(
-		(groups) => groups.flat(),
-	);
+	return Promise.all([
+		fetchClaudeAccounts(),
+		fetchCodexAccounts(),
+		fetchGrokAccounts(),
+		fetchAgyAccounts(),
+	]).then((groups) => groups.flat());
 }
 
 function getQuota(forceRefresh: boolean): Promise<UsageAccount[]> {
@@ -71,10 +79,11 @@ export const usageRouter = router({
 			return accounts.map((account) => ({
 				...account,
 				isDefault:
-					account.selection ===
-					(account.provider === "claude"
-						? defaults.claudeConfigDir
-						: defaults.codexHome),
+					account.agent === "claude"
+						? account.selection === defaults.claudeConfigDir
+						: account.agent === "codex"
+							? account.selection === defaults.codexHome
+							: false,
 			}));
 		}),
 
@@ -124,7 +133,7 @@ export const usageRouter = router({
 	setDefaultAccount: protectedProcedure
 		.input(
 			z.object({
-				provider: z.enum(["claude", "codex"]),
+				agent: z.enum(["claude", "codex"]),
 				selection: z.string().nullable(),
 			}),
 		)
@@ -135,33 +144,33 @@ export const usageRouter = router({
 				const accounts = await getQuota(false);
 				const known = accounts.some(
 					(account) =>
-						account.provider === input.provider &&
+						account.agent === input.agent &&
 						account.selection === input.selection,
 				);
 				if (!known) {
 					throw new TRPCError({
 						code: "BAD_REQUEST",
-						message: `No ${input.provider} login found at ${input.selection} — refresh usage and pick again.`,
+						message: `No ${input.agent} login found at ${input.selection} — refresh usage and pick again.`,
 					});
 				}
 			}
-			setDefaultAccountSelection(ctx.db, input.provider, input.selection);
-			// Secondary profiles read hooks from their own dir, so agents launched
-			// there would otherwise lose lifecycle/status reporting; fresh Claude
-			// profiles also need onboarding marked done or the first launch runs
-			// the first-boot wizard. Best-effort: a failed merge must not undo
-			// the switch.
+			setDefaultAccountSelection(ctx.db, input.agent, input.selection);
+			// A profile dir is a whole config root, not just a login: without
+			// provisioning, agents launched there lose the user's skills,
+			// plugins, MCP servers and settings along with Superset's lifecycle
+			// hooks — and, for Claude, the shared session history. Best-effort —
+			// a failed share must not undo the switch, and provisioning retries
+			// on the next switch and at host boot.
 			if (input.selection !== null) {
 				try {
-					if (input.provider === "claude") {
-						ensureClaudeManagedHooksAt(input.selection);
-						seedClaudeProfileOnboarding(input.selection);
-					} else {
-						ensureCodexManagedHooksAt(input.selection);
-					}
-				} catch {
-					// Agents still run without hooks; provisioning retries on the
-					// next switch.
+					await (input.agent === "claude"
+						? provisionClaudeAccount(input.selection)
+						: provisionCodexAccount(input.selection));
+				} catch (error) {
+					console.warn(
+						`[host-service] provisioning ${input.agent} account ${input.selection} failed (continuing):`,
+						error,
+					);
 				}
 			}
 			return { success: true as const };
@@ -177,7 +186,7 @@ export const usageRouter = router({
 	removeAccount: protectedProcedure
 		.input(
 			z.object({
-				provider: z.enum(["claude", "codex"]),
+				agent: z.enum(["claude", "codex"]),
 				selection: z.string(),
 			}),
 		)
@@ -185,27 +194,27 @@ export const usageRouter = router({
 			const accounts = await getQuota(false);
 			const known = accounts.some(
 				(account) =>
-					account.provider === input.provider &&
+					account.agent === input.agent &&
 					account.selection === input.selection,
 			);
 			if (!known) {
 				throw new TRPCError({
 					code: "BAD_REQUEST",
-					message: `No removable ${input.provider} profile at ${input.selection}.`,
+					message: `No removable ${input.agent} profile at ${input.selection}.`,
 				});
 			}
-			if (input.provider === "claude") {
+			if (input.agent === "claude") {
 				await removeClaudeProfile(input.selection);
 			} else {
 				await removeCodexHome(input.selection);
 			}
 			const defaults = getDefaultAccountSelections(ctx.db);
 			const pointer =
-				input.provider === "claude"
+				input.agent === "claude"
 					? defaults.claudeConfigDir
 					: defaults.codexHome;
 			if (pointer === input.selection) {
-				setDefaultAccountSelection(ctx.db, input.provider, null);
+				setDefaultAccountSelection(ctx.db, input.agent, null);
 			}
 			// The quota cache still lists the removed account; drop it so the
 			// next query re-discovers.
@@ -214,26 +223,38 @@ export const usageRouter = router({
 		}),
 
 	/**
-	 * One-time preparation for a freshly added Claude profile: mark onboarding
-	 * complete so the first agent launch doesn't open the first-boot wizard.
-	 * Only accepts discovered profile dirs.
+	 * Preparation for a freshly added profile: share the default account's
+	 * config into it (and, for Claude, mark onboarding complete), so its first
+	 * agent launch opens the prompt with the user's usual setup instead of the
+	 * first-boot wizard on an empty install. Only accepts discovered profile
+	 * dirs.
 	 */
-	prepareClaudeProfile: protectedProcedure
-		.input(z.object({ configDir: z.string() }))
+	prepareAccount: protectedProcedure
+		.input(
+			z.object({
+				agent: z.enum(["claude", "codex"]),
+				selection: z.string(),
+			}),
+		)
 		.mutation(async ({ input }) => {
-			const profiles = await discoverClaudeProfiles();
-			if (!profiles.some((profile) => profile.configDir === input.configDir)) {
+			const discovered =
+				input.agent === "claude"
+					? (await discoverClaudeProfiles()).map((profile) => profile.configDir)
+					: (await discoverCodexHomes()).map((home) => home.home);
+			if (!discovered.includes(input.selection)) {
 				throw new TRPCError({
 					code: "BAD_REQUEST",
-					message: `No Claude profile found at ${input.configDir}.`,
+					message: `No ${input.agent} profile found at ${input.selection}.`,
 				});
 			}
-			seedClaudeProfileOnboarding(input.configDir);
+			await (input.agent === "claude"
+				? provisionClaudeAccount(input.selection)
+				: provisionCodexAccount(input.selection));
 			return { success: true as const };
 		}),
 
 	/**
-	 * Token/cost history estimated from the providers' own transcript logs,
+	 * Token/cost history estimated from the agents' own transcript logs,
 	 * priced at API list rates. Runs in the worker pool — the transcript
 	 * trees reach multiple GB. Coalesced per window so concurrent callers
 	 * (and the renderer's poll) share one scan.
@@ -299,6 +320,31 @@ export const usageRouter = router({
 				}),
 			}),
 		),
+
+	leaderboardPayload: queryProcedure
+		.meta({ timeoutMs: 120_000 })
+		.input(z.object({ days: z.number().int().min(1).max(90) }))
+		.query(
+			offLoop({
+				task: leaderboardPayloadTask,
+				prepare: ({ ctx, input }) => {
+					const nowMs = Date.now();
+					return {
+						days: input.days,
+						nowMs,
+						agentPrsByDay: countAgentPrsByDay(
+							ctx.db,
+							input.days,
+							new Date(nowMs),
+						),
+					};
+				},
+				options: ({ input }) => ({
+					dedupeKey: `usage-leaderboard-payload:${input.days}`,
+					timeoutMs: 110_000,
+				}),
+			}),
+		),
 });
 
 export type {
@@ -307,4 +353,14 @@ export type {
 	UsageModelBreakdown,
 	UsageProjectBreakdown,
 } from "./history/aggregate";
-export type { UsageAccount, UsageProvider, UsageQuotaWindow } from "./types";
+export type {
+	LeaderboardDay,
+	LeaderboardPayload,
+} from "./history/leaderboard-days";
+export type {
+	ModelProvider,
+	QuotaCapableAgent,
+	UsageAccount,
+	UsageAgent,
+	UsageQuotaWindow,
+} from "./types";

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import type { WorkspaceState } from "@superset/panes";
+import { SESSIONS_TAG_SCOPE } from "@superset/shared/workspace-tags";
 import {
 	DEFAULT_V2_USER_PREFERENCES,
+	dashboardSidebarSectionSchema,
 	healV2UserPreferences,
 	healWorkspaceLocalState,
 	sanitizePaneLayout,
@@ -118,6 +120,32 @@ describe("healV2UserPreferences", () => {
 	});
 });
 
+describe("healV2UserPreferences favoritePageIds", () => {
+	it("defaults to an empty list on rows written before the field existed", () => {
+		expect(healV2UserPreferences({}).favoritePageIds).toEqual([]);
+	});
+
+	it("preserves stored ids in order", () => {
+		const healed = healV2UserPreferences({
+			favoritePageIds: ["page-b", "page-a"],
+		});
+		expect(healed.favoritePageIds).toEqual(["page-b", "page-a"]);
+	});
+
+	it("drops non-string and empty entries", () => {
+		const healed = healV2UserPreferences({
+			favoritePageIds: ["page-a", "", null, 7, "page-b"],
+		});
+		expect(healed.favoritePageIds).toEqual(["page-a", "page-b"]);
+	});
+
+	it("recovers from a non-array value", () => {
+		expect(
+			healV2UserPreferences({ favoritePageIds: "page-a" }).favoritePageIds,
+		).toEqual([]);
+	});
+});
+
 describe("healWorkspaceLocalState", () => {
 	const validPaneLayout: PaneLayout = {
 		version: 1,
@@ -144,7 +172,7 @@ describe("healWorkspaceLocalState", () => {
 			tabOrder: 3,
 			sectionId: null,
 			changesFilter: { kind: "all" },
-			activeTab: "changes",
+			activeTab: "files",
 			isHidden: false,
 		},
 		viewedFiles: ["a.ts"],
@@ -192,7 +220,7 @@ describe("healWorkspaceLocalState", () => {
 		expect(healed.sidebarState.tabOrder).toBe(0);
 		expect(healed.sidebarState.sectionId).toBeNull();
 		expect(healed.sidebarState.changesFilter).toEqual({ kind: "all" });
-		expect(healed.sidebarState.activeTab).toBe("changes");
+		expect(healed.sidebarState.activeTab).toBe("files");
 		expect(healed.sidebarState.isHidden).toBe(false);
 		expect(healed.sidebarState.pinnedAt).toBeNull();
 	});
@@ -350,5 +378,145 @@ describe("workspaceLocalStateSchema projectId nullability", () => {
 			workspaceLocalStateSchema.safeParse({ ...row(null), sidebarState: {} })
 				.success,
 		).toBe(false);
+	});
+});
+
+describe("workspace sidebar activeTab retirement", () => {
+	const stored = {
+		workspaceId: "11111111-1111-1111-1111-111111111111",
+		createdAt: new Date("2026-01-01T00:00:00.000Z"),
+		paneLayout: { version: 1, tabs: [], activeTabId: null },
+		sidebarState: {
+			projectId: "22222222-2222-2222-2222-222222222222",
+			activeTab: "pages",
+		},
+	};
+
+	it("prunes a row persisted on the retired pages tab back to files", () => {
+		expect(healWorkspaceLocalState(stored).sidebarState.activeTab).toBe(
+			"files",
+		);
+	});
+
+	it("prunes a row persisted on the retired changes tab back to files", () => {
+		const healed = healWorkspaceLocalState({
+			...stored,
+			sidebarState: { ...stored.sidebarState, activeTab: "changes" },
+		});
+		expect(healed.sidebarState.activeTab).toBe("files");
+	});
+
+	it("leaves a surviving tab untouched", () => {
+		const healed = healWorkspaceLocalState({
+			...stored,
+			sidebarState: { ...stored.sidebarState, activeTab: "review" },
+		});
+		expect(healed.sidebarState.activeTab).toBe("review");
+	});
+
+	it("rejects the retired values at the schema edge", () => {
+		for (const retired of ["pages", "changes"]) {
+			expect(
+				workspaceLocalStateSchema.safeParse({
+					...stored,
+					sidebarState: {
+						projectId: stored.sidebarState.projectId,
+						activeTab: retired,
+					},
+				}).success,
+			).toBe(false);
+		}
+	});
+});
+
+describe("dashboardSidebarSectionSchema tag folders", () => {
+	// withReadHeal DELETES rows that fail parse, so every previously
+	// persisted shape must keep parsing after the tag-folder widening.
+	const preTagsRow = {
+		sectionId: "33333333-3333-4333-8333-333333333333",
+		projectId: "22222222-2222-4222-8222-222222222222",
+		name: "Old group",
+		createdAt: new Date("2026-01-01T00:00:00.000Z"),
+		tabOrder: 2,
+		isCollapsed: false,
+		color: "#abcdef",
+		// No `tag` — the field did not exist when this row was written.
+	};
+
+	it("parses a pre-tags persisted row; the absent tag defaults to null", () => {
+		const parsed = dashboardSidebarSectionSchema.parse(preTagsRow);
+		expect(parsed.tag).toBeNull();
+		expect(parsed.sectionId).toBe(preTagsRow.sectionId);
+	});
+
+	it("parses a tag-backed row with a composite (non-uuid) sectionId", () => {
+		const parsed = dashboardSidebarSectionSchema.parse({
+			...preTagsRow,
+			sectionId: "22222222-2222-4222-8222-222222222222:perf work",
+			tag: "perf work",
+		});
+		expect(parsed.sectionId).toBe(
+			"22222222-2222-4222-8222-222222222222:perf work",
+		);
+		expect(parsed.tag).toBe("perf work");
+	});
+});
+
+describe("workspaceLocalStateSchema sectionId widening", () => {
+	const paneLayout: PaneLayout = { version: 1, tabs: [], activeTabId: null };
+	const row = (sectionId: unknown) => ({
+		workspaceId: "11111111-1111-4111-8111-111111111111",
+		createdAt: new Date("2026-01-01T00:00:00.000Z"),
+		paneLayout,
+		sidebarState: {
+			projectId: "22222222-2222-4222-8222-222222222222",
+			sectionId,
+		},
+	});
+
+	it("parses a pre-widening uuid pointer unchanged", () => {
+		expect(
+			workspaceLocalStateSchema.parse(
+				row("33333333-3333-4333-8333-333333333333"),
+			).sidebarState.sectionId,
+		).toBe("33333333-3333-4333-8333-333333333333");
+	});
+
+	it("parses a composite tag-folder pointer", () => {
+		expect(
+			workspaceLocalStateSchema.parse(
+				row("22222222-2222-4222-8222-222222222222:perf"),
+			).sidebarState.sectionId,
+		).toBe("22222222-2222-4222-8222-222222222222:perf");
+	});
+
+	it("parses a row with the sectionId field ABSENT (defaults to null)", () => {
+		expect(
+			workspaceLocalStateSchema.parse(row(undefined)).sidebarState.sectionId,
+		).toBeNull();
+	});
+});
+
+describe("dashboardSidebarSectionSchema (Sessions scope)", () => {
+	it("accepts a folder row stored under the Sessions tag scope", () => {
+		const parsed = dashboardSidebarSectionSchema.parse({
+			sectionId: `${SESSIONS_TAG_SCOPE}:automation`,
+			projectId: SESSIONS_TAG_SCOPE,
+			name: "automation",
+			tag: "automation",
+			createdAt: new Date().toISOString(),
+		});
+		expect(parsed.projectId).toBe(SESSIONS_TAG_SCOPE);
+	});
+
+	it("still rejects an arbitrary non-uuid project id", () => {
+		expect(() =>
+			dashboardSidebarSectionSchema.parse({
+				sectionId: "x:tag",
+				projectId: "x",
+				name: "x",
+				createdAt: new Date().toISOString(),
+			}),
+		).toThrow();
 	});
 });
