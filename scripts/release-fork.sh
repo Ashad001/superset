@@ -33,6 +33,15 @@ bun install
 
 echo "==> Building Superset $VERSION as $CSC_NAME"
 export SUPERSET_ENV_FILE=../../.env.fork
+# SUPERSET_ENV_FILE only steers the desktop bundle. apps/desktop/scripts/
+# build-bundled-cli.ts reads ../../.env itself and falls back to
+# NEXT_PUBLIC_API_URL / NEXT_PUBLIC_WEB_URL, which point at localhost in a dev
+# checkout — that shipped a CLI hardwired to http://localhost:3001, so every
+# `superset` command failed with "Unable to connect". It loads .env with
+# override:false, so exporting these first wins.
+export SUPERSET_API_URL=https://api.superset.sh
+export SUPERSET_WEB_URL=https://app.superset.sh
+export RELAY_URL=https://relay.superset.sh
 # Stale artifacts from an earlier version otherwise get swept into the release
 # by the asset globs below.
 rm -rf apps/desktop/release
