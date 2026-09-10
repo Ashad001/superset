@@ -20,8 +20,14 @@ import {
 } from "./links";
 
 export type LinkHoverInfo =
-	| { kind: "file"; isDirectory: boolean; resolvedPath?: string }
-	| { kind: "url" }
+	| {
+			kind: "file";
+			isDirectory: boolean;
+			resolvedPath?: string;
+			row?: number;
+			col?: number;
+	  }
+	| { kind: "url"; url: string }
 	| { kind: "image" };
 
 /**
@@ -135,6 +141,8 @@ export class TerminalLinkManager {
 							kind: "file",
 							isDirectory: link.isDirectory,
 							resolvedPath: link.resolvedPath,
+							row: link.row,
+							col: link.col,
 						})
 				: undefined,
 			onLinkLeave,
@@ -150,7 +158,7 @@ export class TerminalLinkManager {
 					onUrlClick(event, uri);
 				},
 				onLinkHover
-					? (event) => onLinkHover(event, { kind: "url" })
+					? (event, uri) => onLinkHover(event, { kind: "url", url: uri })
 					: undefined,
 				onLinkLeave,
 			);
@@ -179,7 +187,7 @@ export class TerminalLinkManager {
 								event,
 								fileUriToPath(uri)
 									? { kind: "file", isDirectory: false }
-									: { kind: "url" },
+									: { kind: "url", url: uri },
 							)
 					: undefined,
 				leave: onLinkLeave ? () => onLinkLeave() : undefined,
@@ -212,7 +220,12 @@ export class TerminalLinkManager {
 					});
 				},
 				onLinkHover
-					? (event) => onLinkHover(event, { kind: "file", isDirectory: false })
+					? (event, resolvedPath) =>
+							onLinkHover(event, {
+								kind: "file",
+								isDirectory: false,
+								resolvedPath,
+							})
 					: undefined,
 				onLinkLeave,
 			);

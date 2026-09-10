@@ -149,12 +149,10 @@ export function BehaviorSettings({ visibleItems }: BehaviorSettingsProps) {
 		<div className="p-6 max-w-4xl w-full">
 			<div className="mb-8">
 				<h2 className="text-xl font-semibold">
-					<Trans id="settings.behavior.title">General</Trans>
+					<Trans>General</Trans>
 				</h2>
 				<p className="text-sm text-muted-foreground mt-1">
-					<Trans id="settings.behavior.subtitle">
-						Configure general app preferences
-					</Trans>
+					<Trans>Configure general app preferences</Trans>
 				</p>
 			</div>
 
@@ -165,16 +163,13 @@ export function BehaviorSettings({ visibleItems }: BehaviorSettingsProps) {
 							<Label htmlFor="confirm-on-quit" className="text-sm font-medium">
 								<HighlightText
 									text={t({
-										id: "settings.behavior.confirmQuit.label",
 										message: "Confirm before quitting",
 									})}
 									query={searchQuery}
 								/>
 							</Label>
 							<p className="text-xs text-muted-foreground">
-								<Trans id="settings.behavior.confirmQuit.hint">
-									Show a confirmation dialog when quitting the app
-								</Trans>
+								<Trans>Show a confirmation dialog when quitting the app</Trans>
 							</p>
 						</div>
 						<Switch
@@ -192,16 +187,13 @@ export function BehaviorSettings({ visibleItems }: BehaviorSettingsProps) {
 							<Label htmlFor="file-open-mode" className="text-sm font-medium">
 								<HighlightText
 									text={t({
-										id: "settings.behavior.fileOpenMode.label",
 										message: "File open mode",
 									})}
 									query={searchQuery}
 								/>
 							</Label>
 							<p className="text-xs text-muted-foreground">
-								<Trans id="settings.behavior.fileOpenMode.hint">
-									Choose how files open when no preview pane exists
-								</Trans>
+								<Trans>Choose how files open when no preview pane exists</Trans>
 							</p>
 						</div>
 						<Select
@@ -216,14 +208,10 @@ export function BehaviorSettings({ visibleItems }: BehaviorSettingsProps) {
 							</SelectTrigger>
 							<SelectContent>
 								<SelectItem value="split-pane">
-									<Trans id="settings.behavior.fileOpenMode.splitPane">
-										Split pane
-									</Trans>
+									<Trans>Split pane</Trans>
 								</SelectItem>
 								<SelectItem value="new-tab">
-									<Trans id="settings.behavior.fileOpenMode.newTab">
-										New tab
-									</Trans>
+									<Trans>New tab</Trans>
 								</SelectItem>
 							</SelectContent>
 						</Select>
@@ -239,14 +227,13 @@ export function BehaviorSettings({ visibleItems }: BehaviorSettingsProps) {
 							>
 								<HighlightText
 									text={t({
-										id: "settings.behavior.changesOpenTarget.label",
 										message: "Changes open target",
 									})}
 									query={searchQuery}
 								/>
 							</Label>
 							<p className="text-xs text-muted-foreground">
-								<Trans id="settings.behavior.changesOpenTarget.hint">
+								<Trans>
 									Choose how the Changes view opens from the top bar
 								</Trans>
 							</p>
@@ -262,14 +249,10 @@ export function BehaviorSettings({ visibleItems }: BehaviorSettingsProps) {
 							</SelectTrigger>
 							<SelectContent>
 								<SelectItem value="pane">
-									<Trans id="settings.behavior.changesOpenTarget.pane">
-										Pane in current tab
-									</Trans>
+									<Trans>Pane in current tab</Trans>
 								</SelectItem>
 								<SelectItem value="tab">
-									<Trans id="settings.behavior.changesOpenTarget.tab">
-										New tab
-									</Trans>
+									<Trans>New tab</Trans>
 								</SelectItem>
 							</SelectContent>
 						</Select>
@@ -282,16 +265,13 @@ export function BehaviorSettings({ visibleItems }: BehaviorSettingsProps) {
 							<Label htmlFor="resource-monitor" className="text-sm font-medium">
 								<HighlightText
 									text={t({
-										id: "settings.behavior.resourceMonitor.label",
 										message: "Resource monitor",
 									})}
 									query={searchQuery}
 								/>
 							</Label>
 							<p className="text-xs text-muted-foreground">
-								<Trans id="settings.behavior.resourceMonitor.hint">
-									Show CPU and memory usage in the top bar
-								</Trans>
+								<Trans>Show CPU and memory usage in the top bar</Trans>
 							</p>
 						</div>
 						<Switch
@@ -332,14 +312,13 @@ export function BehaviorSettings({ visibleItems }: BehaviorSettingsProps) {
 							>
 								<HighlightText
 									text={t({
-										id: "settings.behavior.openLinksInApp.label",
 										message: "Open links in the in-app browser",
 									})}
 									query={searchQuery}
 								/>
 							</Label>
 							<p className="text-xs text-muted-foreground">
-								<Trans id="settings.behavior.openLinksInApp.hint">
+								<Trans>
 									Open links from chat and terminal in the in-app browser
 									instead of your default browser
 								</Trans>

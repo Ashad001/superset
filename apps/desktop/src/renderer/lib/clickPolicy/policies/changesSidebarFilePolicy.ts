@@ -1,3 +1,4 @@
+import { msg } from "@lingui/core/macro";
 import { i18n } from "@superset/i18n";
 import { modifierLabel } from "../modifierLabel";
 import { tierFor } from "../tiers";
@@ -29,18 +30,16 @@ function intentFor(
 }
 
 function shortIntentLabel(intent: ChangesSidebarFileIntent): string {
-	if (intent === "diff")
-		return i18n._({ id: "clickPolicy.changes.diff", message: "diff" });
+	if (intent === "diff") return i18n._(msg({ message: "diff" }));
 	if (intent === "diffNewTab")
-		return i18n._({
-			id: "clickPolicy.changes.diffNewTab",
-			message: "diff in new tab",
-		});
-	if (intent === "file")
-		return i18n._({ id: "clickPolicy.changes.file", message: "open file" });
-	if (intent === "system")
-		return i18n._({ id: "clickPolicy.changes.system", message: "default app" });
-	return i18n._({ id: "clickPolicy.changes.external", message: "editor" });
+		return i18n._(
+			msg({
+				message: "diff in new tab",
+			}),
+		);
+	if (intent === "file") return i18n._(msg({ message: "open file" }));
+	if (intent === "system") return i18n._(msg({ message: "default app" }));
+	return i18n._(msg({ message: "editor" }));
 }
 
 export function resolveChangesSidebarFileIntent(

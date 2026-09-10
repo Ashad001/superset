@@ -87,9 +87,7 @@ export function LinkTierMapper({
 								</SelectTrigger>
 								<SelectContent>
 									<SelectItem value="none">
-										<Trans id="settings.links.tierMapper.doNothing">
-											Do nothing
-										</Trans>
+										<Trans>Do nothing</Trans>
 									</SelectItem>
 									{(surface === "file" ? FILE_ACTIONS : URL_ACTIONS).map(
 										(action) => (
