@@ -6176,6 +6176,9 @@ msgstr "Openen van worktree mislukt"
 msgid "Failed to open: {0}"
 msgstr "Openen mislukt: {0}"
 
+msgid "Failed to post reply"
+msgstr "Antwoord plaatsen mislukt"
+
 msgid "Failed to prepare agent launch"
 msgstr "Voorbereiden van agentstart mislukt"
 

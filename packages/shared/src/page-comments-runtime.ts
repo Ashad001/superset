@@ -27,6 +27,8 @@ export interface FrameRect {
 export const HOST_CHANNEL = "superset-comments/host";
 export const FRAME_CHANNEL = "superset-comments/frame";
 
+export const PENDING_ANCHOR_ID = "superset-pending-anchor";
+
 export type HostMessageBody =
 	| { type: "ready" }
 	| { type: "enable-pinch-zoom" }
@@ -241,7 +243,17 @@ export const PAGE_COMMENTS_RUNTIME_SOURCE = `(() => {
 		schedule();
 	}, () => locked);
 
-	addEventListener("scroll", schedule, true);
+	addEventListener(
+		"scroll",
+		() => {
+			if (enabled && lastHoverPath !== null) {
+				lastHoverPath = null;
+				post({ type: "hover", rect: null });
+			}
+			schedule();
+		},
+		true,
+	);
 	addEventListener("resize", schedule);
 	for (const type of ["wheel", "touchstart", "keydown"]) {
 		addEventListener(type, () => {
