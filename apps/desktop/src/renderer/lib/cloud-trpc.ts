@@ -39,6 +39,7 @@ export const CLOUD_TRPC_ROUTER_ROOTS = [
 	"billing",
 	"chat",
 	"environment",
+	"githubUser",
 	"host",
 	"integration",
 	"organization",

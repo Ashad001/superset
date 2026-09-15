@@ -233,28 +233,16 @@ export const SANDBOX_CREDENTIAL_PLACEHOLDER =
  */
 export const SANDBOX_WORKSPACE_PATH = "/workspace";
 
-/**
- * host.db inside a sandbox. Separate from the checkout so a persistent volume
- * can mount over it without touching the workspace, and so the image can ship
- * a pre-migrated template alongside it.
- */
-export const SANDBOX_HOST_DB_PATH = "/data/host.db";
-
 export const SANDBOX_IMAGE_NAME = "superset-hostsvc";
+
+/** The one transaction the API traces: the cloud workspace provision job. */
+export const CLOUD_WORKSPACE_PROVISION_TRANSACTION =
+	"cloud-workspace.provision";
 
 export const SHARED_ENVIRONMENT_ORGANIZATION_ID =
 	"00000000-0000-0000-0000-000000000000";
 
 export const SHARED_ENVIRONMENT_NAME = "Default";
-
-/**
- * Every cloud workspace clones this. Environments cannot carry repositories yet,
- * so there is nothing per-workspace to resolve and no project to pick.
- */
-export const CLOUD_WORKSPACE_REPO = {
-	owner: "superset-sh",
-	name: "superset",
-} as const;
 
 // Terminal identity presented to shell programs via TERM_PROGRAM. kitty:
 // agent TUIs (claude-code especially) tune wheel-scroll compensation per

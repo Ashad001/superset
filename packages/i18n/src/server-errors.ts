@@ -224,6 +224,59 @@ export const serverErrorMessages: Record<
 				"Cloud sandboxes are not enabled for {account}. Ask the Superset team for access.",
 			values: params,
 		}),
+	"serverError.cloudWorkspace.repositoryRequired": () =>
+		i18n._(
+			msg({
+				message: "Pick at least one repository for this workspace",
+			}),
+		),
+	"serverError.cloudWorkspace.repositoryNotConnected": () =>
+		i18n._(
+			msg({
+				message:
+					"A repository is not connected to this organization, or the repositories come from different GitHub installations",
+			}),
+		),
+	"serverError.environment.repositoryNotConnected": () =>
+		i18n._(
+			msg({
+				message:
+					"A repository is not connected to this organization, or the repositories come from different GitHub installations",
+			}),
+		),
+	"serverError.environment.hooksRepositoryNotIncluded": () =>
+		i18n._(
+			msg({
+				message:
+					"The config repository must be one of the environment's repositories",
+			}),
+		),
+	"serverError.githubUser.notConfigured": () =>
+		i18n._(
+			msg({
+				message: "Connecting GitHub is not configured on this server",
+			}),
+		),
+	"serverError.cloudWorkspace.githubRepositoryOutOfReach": () =>
+		i18n._(
+			msg({
+				message:
+					"Your GitHub account cannot reach a repository in this environment",
+			}),
+		),
+	"serverError.environment.repositoriesFrozen": () =>
+		i18n._(
+			msg({
+				message:
+					"This environment's repositories are fixed; promote a workspace again to change them",
+			}),
+		),
+	"serverError.environment.couldNotRecord": () =>
+		i18n._(
+			msg({
+				message: "Could not record environment",
+			}),
+		),
 	"serverError.cloudWorkspace.couldNotRecordCloudWorkspace": () =>
 		i18n._(
 			msg({
