@@ -40,7 +40,7 @@ export function register(server: McpServer): void {
 					"What changed in this version, shown in the version history. Display-only.",
 				),
 				visibility: optionalish(pageFields.visibility).describe(
-					"`org` (the default) lets anyone in the organization open it; `just_me` keeps it private to the publisher.",
+					"`org` (the default) lets anyone in the organization open it; `just_me` keeps it private to the publisher; `everyone` lets anyone with the link open it without signing in.",
 				),
 				workspaceId: optionalish(pageFields.workspaceId).describe(
 					"The workspace this page belongs to. Pass it whenever you have one — it is how a later publish of the same `entryPath` becomes a version rather than a second page. Check `$SUPERSET_WORKSPACE_ID` before deciding you have none: every agent running in a Superset terminal has it set, and leaving it out there is what turns the next republish into a second page. Otherwise run `superset workspaces list`. Omit it only when you are genuinely outside a workspace; the page is still created and still listed, and `pageId` is then the only way to version it.",
