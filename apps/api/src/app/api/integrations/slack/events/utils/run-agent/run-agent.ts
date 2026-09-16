@@ -135,6 +135,8 @@ interface RunSlackAgentParams {
 	images?: SlackImageAsset[];
 	/** Epoch ms after which no further model or tool call starts. */
 	deadline?: number;
+	/** What the agent already created in this thread; see renderThreadMemory. */
+	threadMemory?: string;
 	onProgress?: (status: string) => void | Promise<void>;
 }
 
@@ -470,14 +472,17 @@ async function fetchAgentContext({
 function buildUserMessageContent({
 	prompt,
 	threadContext,
+	threadMemory,
 	images,
 }: {
 	prompt: string;
 	threadContext: string;
+	threadMemory: string | undefined;
 	images: SlackImageAsset[] | undefined;
 }): string | Anthropic.ContentBlockParam[] {
-	const textContent = threadContext
-		? `${threadContext}\n\nCurrent message:\n${prompt}`
+	const preamble = [threadMemory, threadContext].filter(Boolean).join("\n\n");
+	const textContent = preamble
+		? `${preamble}\n\nCurrent message:\n${prompt}`
 		: prompt;
 
 	if (!images || images.length === 0) {
@@ -580,6 +585,7 @@ ${agentContext}`;
 		const userContent = buildUserMessageContent({
 			prompt: params.prompt,
 			threadContext,
+			threadMemory: params.threadMemory,
 			images: params.images,
 		});
 
