@@ -30,9 +30,10 @@ import {
 import {
 	beginThreadRun,
 	finishThreadRun,
-	QUIET_THREAD_PATTERN,
-	quietThread,
+	parseThreadCommand,
 	renderThreadMemory,
+	setThreadQuiet,
+	threadFollowUpsEnabled,
 } from "../utils/thread-sessions";
 
 import { splitMarkdown } from "./utils/split-markdown";
@@ -44,6 +45,7 @@ const LOST_TRACK_TEXT =
 	"I lost track of this request partway through. Anything listed as changed in this thread did happen; ask again for the rest.";
 const QUIETED_TEXT =
 	"Got it. I'll stay out of this thread unless someone mentions me.";
+const UNQUIETED_TEXT = "Got it. I'll answer replies in this thread again.";
 
 interface SlackEventFile {
 	id: string;
@@ -209,29 +211,32 @@ export async function processAgentMessage({
 	}
 
 	const threadTs = event.thread_ts ?? event.ts;
+	const isDm = event.channel_type === "im";
+	// Thread sessions (memory, quieting, follow-ups) are one feature; a team
+	// without the flag runs the Phase 0 path untouched.
+	const sessions = await threadFollowUpsEnabled(teamId);
+	const threadKey = {
+		organizationId: connection.organizationId,
+		teamId,
+		channelId: event.channel,
+		threadTs,
+		userId: slackUserLink.userId,
+	};
 
-	if (QUIET_THREAD_PATTERN.test(event.text ?? "")) {
-		await quietThread({
-			organizationId: connection.organizationId,
-			teamId,
-			channelId: event.channel,
-			threadTs,
-			userId: slackUserLink.userId,
-		});
-		await slack.chat.postMessage({
-			channel: event.channel,
-			thread_ts: threadTs,
-			text: QUIETED_TEXT,
-		});
-		return;
-	}
+	// A thread reply without a mention only reaches this worker through the
+	// follow-up path, which the flag opened at enqueue time. It may have
+	// closed since, and the unflagged path never runs the agent for one.
+	const isFollowUp = event.type === "message" && !isDm;
+	if (isFollowUp && !sessions) return;
+	// Every DM already reaches the agent, so quieting means nothing there.
+	const command =
+		sessions && !isDm ? parseThreadCommand(event.text ?? "") : null;
 	// assistant.threads.setStatus only works in assistant (DM) threads; Slack
 	// answers method_not_supported_for_channel_type anywhere else. Channels get
 	// a placeholder message that carries progress and is removed once the final
 	// reply exists, so the thread ends with one notifying message.
 	const deadline = Date.now() + RUN_BUDGET_MS;
 	const run = createSlackClient(connection.accessToken, { deadline });
-	const isDm = event.channel_type === "im";
 	let placeholderTs: string | undefined;
 
 	const showProgress = async (status: string) => {
@@ -305,6 +310,21 @@ export async function processAgentMessage({
 		return;
 	}
 	const deliveryId = claim.id;
+	if (command) {
+		let applied = false;
+		try {
+			await setThreadQuiet({ ...threadKey, quiet: command === "mute" });
+			await run.chat.postMessage({
+				channel: event.channel,
+				thread_ts: threadTs,
+				text: command === "mute" ? QUIETED_TEXT : UNQUIETED_TEXT,
+			});
+			applied = true;
+		} finally {
+			await finishAgentDelivery(deliveryId, applied);
+		}
+		return;
+	}
 	let delivered = false;
 	let actions: AgentAction[] = [];
 	let threadSessionId: string | undefined;
@@ -336,14 +356,8 @@ export async function processAgentMessage({
 			slack: run,
 		});
 
-		const threadSession = await beginThreadRun({
-			organizationId: connection.organizationId,
-			teamId,
-			channelId: event.channel,
-			threadTs,
-			userId: slackUserLink.userId,
-		});
-		threadSessionId = threadSession.id;
+		const threadSession = sessions ? await beginThreadRun(threadKey) : null;
+		threadSessionId = threadSession?.id;
 
 		const result = await runSlackAgent({
 			prompt: resolve(event.text ?? ""),
@@ -356,7 +370,20 @@ export async function processAgentMessage({
 			model: slackUserLink.modelPreference ?? undefined,
 			images: imageAssets,
 			deadline,
-			threadMemory: renderThreadMemory(threadSession.entityLog),
+			...(threadSession
+				? {
+						threadMemory: renderThreadMemory(threadSession.entityLog),
+						...(isDm
+							? {}
+							: {
+									threadQuiet: {
+										quiet: threadSession.quiet,
+										set: (quiet: boolean) =>
+											setThreadQuiet({ ...threadKey, quiet }),
+									},
+								}),
+					}
+				: {}),
 			onProgress: showProgress,
 		});
 		actions = result.actions;
