@@ -31,13 +31,14 @@ import {
 	SlackImageAssetError,
 } from "../utils/slack-image-assets";
 import {
+	abandonHandBack,
 	beginThreadRun,
-	clearQueuedEventsThrough,
+	completeHandBack,
 	finishThreadRun,
 	parseThreadCommand,
-	readQueuedEvents,
 	renderThreadMemory,
 	setThreadQuiet,
+	takeQueuedEvents,
 	threadFollowUpsEnabled,
 } from "../utils/thread-sessions";
 
@@ -45,6 +46,7 @@ import { splitMarkdown } from "./utils/split-markdown";
 
 /** Everything after the claim — preflight, model calls, tools — shares this. */
 const RUN_BUDGET_MS = 240_000;
+const WORKER_FLAG_TIMEOUT_MS = 5_000;
 /**
  * The reply, or why there is none, is posted after the run budget is spent,
  * in what remains of the job route's 300s maxDuration.
@@ -230,7 +232,13 @@ export async function processAgentMessage({
 	const isDm = event.channel_type === "im";
 	// Thread sessions (memory, quieting, follow-ups) are one feature; a team
 	// without the flag runs the Phase 0 path untouched.
-	const sessions = await threadFollowUpsEnabled(teamId);
+	// A hand-back was queued while the flag was on, so it does not re-ask;
+	// the events route already answered Slack, so this worker can wait longer.
+	const sessions =
+		event.queued_ts !== undefined ||
+		(await threadFollowUpsEnabled(teamId, {
+			timeoutMs: WORKER_FLAG_TIMEOUT_MS,
+		}));
 	const threadKey = {
 		organizationId: connection.organizationId,
 		teamId,
@@ -262,19 +270,19 @@ export async function processAgentMessage({
 	const showProgress = async (status: string) => {
 		try {
 			if (isDm) {
-				await run.assistant.threads.setStatus({
+				await reply.assistant.threads.setStatus({
 					channel_id: event.channel,
 					thread_ts: threadTs,
 					status,
 				});
 			} else if (placeholderTs) {
-				await run.chat.update({
+				await reply.chat.update({
 					channel: event.channel,
 					ts: placeholderTs,
 					text: status,
 				});
 			} else {
-				const posted = await run.chat.postMessage({
+				const posted = await reply.chat.postMessage({
 					channel: event.channel,
 					thread_ts: threadTs,
 					text: status,
@@ -356,7 +364,7 @@ export async function processAgentMessage({
 
 	try {
 		try {
-			await run.reactions.add({
+			await reply.reactions.add({
 				channel: event.channel,
 				timestamp: event.ts,
 				name: "eyes",
@@ -390,8 +398,13 @@ export async function processAgentMessage({
 						text: event.text ?? "",
 						files: event.files,
 					},
+					handBack: event.queued_ts !== undefined,
 				})
 			: null;
+		if (claimedThread?.status === "covered") {
+			delivered = true;
+			return;
+		}
 		if (claimedThread?.status === "queued") {
 			// The running turn hands this back when it finishes; the 👀 stays
 			// on the message until that later turn clears it.
@@ -503,10 +516,17 @@ export async function processAgentMessage({
 					actions,
 					lastContextTs: event.ts,
 				});
-				await handBackQueued({ threadSessionId, teamId, event });
 			} catch (error) {
 				console.error(
 					"[slack/process-agent-message] Failed to finish thread session",
+					error,
+				);
+			}
+			try {
+				await handBackQueued({ threadSessionId, teamId, event });
+			} catch (error) {
+				console.error(
+					"[slack/process-agent-message] Failed to hand back queued replies",
 					error,
 				);
 			}
@@ -541,16 +561,59 @@ async function handBackQueued({
 	teamId: string;
 	event: SlackAgentMessageEvent;
 }): Promise<void> {
-	const pending = await readQueuedEvents(threadSessionId);
-	const newest = pending.at(-1);
-	if (!newest) return;
-	const isDm = event.channel_type === "im";
 	// One id per hand-off, not per message: the same reply can be handed
 	// back again if another turn takes the thread before its job arrives,
 	// and QStash would swallow a repeat of the first id for ten minutes.
-	const handoffId = `queued:${teamId}:${newest.ts}:${event.ts}`;
+	// QStash rejects a deduplication id containing ":" with a 400, which is
+	// what silently lost the first queued reply in production.
+	const handoffId = `queued-${teamId}-${event.ts.replace(".", "-")}`;
+	const pending = await takeQueuedEvents(threadSessionId, handoffId);
+	const newest = pending.at(-1);
+	if (!newest) return;
+	const isDm = event.channel_type === "im";
 	const files = pending.flatMap((e) => e.files ?? []);
 	const qstash = new QStash({ token: env.QSTASH_TOKEN });
+	try {
+		await publishHandBack({
+			qstash,
+			isDm,
+			event,
+			teamId,
+			pending,
+			newest,
+			handoffId,
+			files,
+		});
+	} catch (error) {
+		await abandonHandBack(threadSessionId, handoffId);
+		throw error;
+	}
+	await completeHandBack(threadSessionId, handoffId);
+	console.log("[slack/process-agent-message] Handed back queued replies:", {
+		handoffId,
+		count: pending.length,
+	});
+}
+
+async function publishHandBack({
+	qstash,
+	isDm,
+	event,
+	teamId,
+	pending,
+	newest,
+	handoffId,
+	files,
+}: {
+	qstash: QStash;
+	isDm: boolean;
+	event: SlackAgentMessageEvent;
+	teamId: string;
+	pending: { ts: string; user: string; text: string }[];
+	newest: { ts: string; user: string; text: string };
+	handoffId: string;
+	files: SlackEventFile[];
+}): Promise<void> {
 	await qstash.publishJSON({
 		url: isDm ? JOB_URLS.assistant : JOB_URLS.mention,
 		body: {
@@ -572,5 +635,4 @@ async function handBackQueued({
 		deduplicationId: handoffId,
 		retries: 3,
 	});
-	await clearQueuedEventsThrough(threadSessionId, newest.ts);
 }

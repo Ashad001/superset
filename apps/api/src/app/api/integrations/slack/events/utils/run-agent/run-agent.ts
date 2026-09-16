@@ -186,6 +186,26 @@ const AGENT_COPY = {
 	empty: "I finished without an answer to show. Ask again with more detail.",
 } as const;
 
+const RATE_LIMIT_DEFAULT_WAIT_MS = 2_000;
+const RATE_LIMIT_MAX_WAIT_MS = 10_000;
+
+/** Retry-After is delay-seconds or an HTTP-date; either becomes a bounded wait. */
+export function rateLimitWaitMs(
+	error: { headers?: { get?: (name: string) => string | null | undefined } },
+	now = Date.now(),
+): number {
+	const header = error.headers?.get?.("retry-after") ?? "";
+	const seconds = Number(header);
+	const fromDate = Date.parse(header) - now;
+	const wait =
+		Number.isFinite(seconds) && seconds > 0
+			? seconds * 1000
+			: Number.isFinite(fromDate) && fromDate > 0
+				? fromDate
+				: RATE_LIMIT_DEFAULT_WAIT_MS;
+	return Math.min(wait, RATE_LIMIT_MAX_WAIT_MS);
+}
+
 export interface SlackAgentResult {
 	text: string;
 	actions: AgentAction[];
@@ -320,6 +340,7 @@ export const ALLOWED_SLACK_TOOLS = new Set([
 	"tasks_list",
 	"tasks_get",
 	"tasks_create",
+	"tasks_update",
 	"workspaces_list",
 	"workspaces_create",
 	"projects_list",
@@ -414,7 +435,7 @@ async function handleGetChannelHistory({
 const SYSTEM_PROMPT = `You are a helpful assistant in Slack for Superset, a platform for managing tasks and running coding agents in workspaces.
 
 You can:
-- Create and search tasks using superset_* tools (updating and deleting tasks is not available from Slack yet)
+- Create, search and update tasks using superset_* tools (deleting tasks is not available from Slack)
 - Spawn workspaces and launch coding agents to do the work using superset_* tools
 - Read recent channel messages using slack_get_channel_history
 - Search the web for current information using web_search
@@ -646,7 +667,10 @@ ${agentContext}`;
 			return anthropic.messages.create(
 				{
 					model,
-					max_tokens: 8192,
+					// A Slack turn is a short reply or a tool call. 8192 non-streamed
+					// tokens took longer than the 120s request timeout and burned the
+					// whole budget on a retry of the same generation.
+					max_tokens: 4096,
 					system: [
 						{
 							type: "text",
@@ -671,12 +695,30 @@ ${agentContext}`;
 				},
 				{
 					timeout: Math.min(MODEL_CALL_TIMEOUT_MS, remaining),
-					// One retry for 429/5xx when the budget can absorb a second attempt.
-					maxRetries: remaining > MODEL_CALL_TIMEOUT_MS * 1.5 ? 1 : 0,
+					maxRetries: 0,
 				},
 			);
 		};
-		let response = await request();
+		// Retry once for 429/5xx/connection errors when the budget can absorb
+		// a second attempt. A timeout is not retried: a generation that took
+		// longer than the request timeout takes just as long the second time.
+		const requestWithRetry = async () => {
+			try {
+				return await request();
+			} catch (error) {
+				if (!(error instanceof Anthropic.APIError)) throw error;
+				const retryable =
+					error instanceof Anthropic.APIConnectionError
+						? !(error instanceof Anthropic.APIConnectionTimeoutError)
+						: error.status === 429 || (error.status ?? 0) >= 500;
+				if (!retryable) throw error;
+				const wait = error.status === 429 ? rateLimitWaitMs(error) : 0;
+				if (deadline - Date.now() - wait < MODEL_CALL_TIMEOUT_MS) throw error;
+				if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+				return request();
+			}
+		};
+		let response = await requestWithRetry();
 
 		const MAX_TOOL_ITERATIONS = 10;
 		let iterations = 0;
@@ -696,7 +738,7 @@ ${agentContext}`;
 					// Non-critical
 				}
 				messages.push({ role: "assistant", content: response.content });
-				response = await request();
+				response = await requestWithRetry();
 				continue;
 			}
 
@@ -817,7 +859,7 @@ ${agentContext}`;
 			});
 			messages.push({ role: "user", content: toolResults });
 
-			response = await request();
+			response = await requestWithRetry();
 		}
 
 		// Never report an unfinished tool plan or truncated text as completed work.
@@ -831,10 +873,21 @@ ${agentContext}`;
 						: AGENT_COPY.turnLimit;
 			return { text, actions };
 		}
+		// Web search splits one paragraph into several text blocks around its
+		// citations: the block after a cited block continues its sentence.
+		// A block after an uncited one (a preamble before a search) is a
+		// new paragraph.
 		const text = response.content
 			.filter((block): block is Anthropic.TextBlock => block.type === "text")
-			.map((block) => block.text)
-			.join("\n\n");
+			.reduce(
+				(joined, block, i, blocks) =>
+					i === 0
+						? block.text
+						: joined +
+							(blocks[i - 1]?.citations?.length ? "" : "\n\n") +
+							block.text,
+				"",
+			);
 		return { text: text || AGENT_COPY.empty, actions };
 	} catch (error) {
 		console.error("[slack-agent] Agent request failed", error);

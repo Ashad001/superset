@@ -21,15 +21,25 @@ const callTool = mock(
 );
 const cleanup = mock(async () => {});
 const listTools = mock(async () => ({
-	tools: ["tasks_create", "tasks_delete", "terminals_send"].map((name) => ({
-		name,
-		inputSchema: { type: "object" },
-	})),
+	tools: ["tasks_create", "tasks_update", "tasks_delete", "terminals_send"].map(
+		(name) => ({
+			name,
+			inputSchema: { type: "object" },
+		}),
+	),
 }));
 mock.module("@/env", () => ({ env: { ANTHROPIC_API_KEY: "test" } }));
+class FakeAPIError extends Error {
+	status?: number;
+	headers?: Headers;
+}
+class FakeConnectionError extends FakeAPIError {}
+class FakeTimeoutError extends FakeConnectionError {}
 mock.module("@anthropic-ai/sdk", () => ({
 	default: class {
-		static APIError = Error;
+		static APIError = FakeAPIError;
+		static APIConnectionError = FakeConnectionError;
+		static APIConnectionTimeoutError = FakeTimeoutError;
 		messages = { create };
 	},
 }));
@@ -58,9 +68,12 @@ mock.module("./mcp-clients", () => ({
 		toolName: name.slice(name.indexOf("_") + 1),
 	}),
 }));
-const { fetchThreadContext, formatErrorForSlack, runSlackAgent } = await import(
-	"./run-agent"
-);
+const {
+	fetchThreadContext,
+	formatErrorForSlack,
+	rateLimitWaitMs,
+	runSlackAgent,
+} = await import("./run-agent");
 const params = {
 	prompt: "Help",
 	channelId: "C1",
@@ -168,13 +181,14 @@ describe("agent loop", () => {
 			name: string;
 		}>;
 		expect(requestTools.map((t) => t.name)).toContain("superset_tasks_create");
+		expect(requestTools.map((t) => t.name)).toContain("superset_tasks_update");
 		expect(requestTools.map((t) => t.name)).not.toContain(
 			"superset_tasks_delete",
 		);
 		expect(requestTools).toContainEqual(
 			expect.objectContaining({ type: "web_search_20260209" }),
 		);
-		expect(create.mock.calls[0]?.[1]).toMatchObject({ maxRetries: 1 });
+		expect(create.mock.calls[0]?.[1]).toMatchObject({ maxRetries: 0 });
 		expect(cleanup).toHaveBeenCalledTimes(1);
 	});
 	test("the quiet tool is offered only for a session, states the thread's mode, and flips it", async () => {
@@ -206,6 +220,81 @@ describe("agent loop", () => {
 		expect(first.tools.map((t) => t.name)).toContain("slack_thread_quiet");
 		expect(first.system[1]?.text).toContain("This thread is quiet");
 		expect(set).toHaveBeenCalledWith(false);
+	});
+
+	test("a model request timeout is not retried; a 5xx is retried once", async () => {
+		create.mockImplementationOnce(async () => {
+			throw new FakeTimeoutError("Request timed out.");
+		});
+		await runSlackAgent(params).catch(() => {});
+		// The error rewrite also calls create; count only agent-loop requests.
+		const loopCalls = () =>
+			create.mock.calls.filter(([req]) => "tools" in (req as object)).length;
+		expect(loopCalls()).toBe(1);
+
+		create.mockReset();
+		create.mockImplementationOnce(async () => {
+			throw Object.assign(new FakeAPIError("overloaded"), { status: 500 });
+		});
+		create.mockImplementationOnce(async () => ({
+			stop_reason: "end_turn",
+			content: [{ type: "text", text: "Recovered", citations: [] }],
+		}));
+		const result = await runSlackAgent(params);
+		expect(result.text).toBe("Recovered");
+		expect(loopCalls()).toBe(2);
+
+		create.mockReset();
+		create.mockImplementationOnce(async () => {
+			throw new FakeConnectionError("socket hang up");
+		});
+		create.mockImplementationOnce(async () => ({
+			stop_reason: "end_turn",
+			content: [{ type: "text", text: "Reconnected", citations: [] }],
+		}));
+		expect((await runSlackAgent(params)).text).toBe("Reconnected");
+		expect(loopCalls()).toBe(2);
+	});
+
+	test("rateLimitWaitMs reads delay-seconds or an HTTP-date, bounded", () => {
+		const headers = (v: string | null) => ({ headers: { get: () => v } });
+		const now = Date.parse("2026-09-16T08:00:00Z");
+		expect(rateLimitWaitMs(headers("3"), now)).toBe(3_000);
+		expect(rateLimitWaitMs(headers("Wed, 16 Sep 2026 08:00:04 GMT"), now)).toBe(
+			4_000,
+		);
+		expect(rateLimitWaitMs(headers("Wed, 16 Sep 2026 07:59:00 GMT"), now)).toBe(
+			2_000,
+		);
+		expect(rateLimitWaitMs(headers("120"), now)).toBe(10_000);
+		expect(rateLimitWaitMs(headers(null), now)).toBe(2_000);
+	});
+
+	test("text split around citations comes back as one paragraph", async () => {
+		create.mockImplementationOnce(async () => ({
+			stop_reason: "end_turn",
+			content: [
+				{ type: "text", text: "Bun 1.4.2 fixes 7 issues", citations: [{}] },
+				{ type: "text", text: ", including two regressions", citations: [{}] },
+				{ type: "text", text: ".", citations: [] },
+			],
+		}));
+		const result = await runSlackAgent(params);
+		expect(result.text).toBe(
+			"Bun 1.4.2 fixes 7 issues, including two regressions.",
+		);
+
+		create.mockImplementationOnce(async () => ({
+			stop_reason: "end_turn",
+			content: [
+				{ type: "text", text: "Let me check.", citations: [] },
+				{ type: "text", text: "Bun 1.4.2 is out", citations: [{}] },
+				{ type: "text", text: ".", citations: [] },
+			],
+		}));
+		expect((await runSlackAgent(params)).text).toBe(
+			"Let me check.\n\nBun 1.4.2 is out.",
+		);
 	});
 
 	test("thread memory is user-turn data, never part of the system prompt", async () => {
