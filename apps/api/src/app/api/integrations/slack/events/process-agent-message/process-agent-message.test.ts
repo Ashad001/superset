@@ -24,6 +24,13 @@ const claim = mock(
 	}),
 );
 const finish = mock(async (_id: string, _succeeded: boolean) => {});
+const release = mock(async (_id: string) => {});
+const publishJSON = mock(async (_options: unknown) => ({}));
+mock.module("@upstash/qstash", () => ({
+	Client: class {
+		publishJSON = publishJSON;
+	},
+}));
 const findLink = mock(
 	async (_args: unknown): Promise<{ userId: string } | undefined> => ({
 		userId: "linked-user",
@@ -61,23 +68,39 @@ mock.module("../utils/run-agent", () => ({
 mock.module("../utils/agent-delivery", () => ({
 	claimAgentDelivery: claim,
 	finishAgentDelivery: finish,
+	releaseAgentDelivery: release,
 }));
 const session = {
 	id: "thread-session",
 	quiet: false,
+	lastContextTs: "5.0",
 	entityLog: [
 		{ kind: "workspace", id: "ws-1", label: "fix-login (feat/login)", at: "x" },
 	],
 };
-const beginThread = mock(async (_args: unknown) => session);
+const beginThread = mock(
+	async (
+		_args: unknown,
+	): Promise<
+		{ status: "running"; session: typeof session } | { status: "queued" }
+	> => ({ status: "running", session }),
+);
 const finishThread = mock(async (_args: unknown) => {});
 const setQuiet = mock(async (_args: unknown) => {});
 const followUpsEnabled = mock(async (_teamId: string) => true);
+const readQueued = mock(
+	async (
+		_id: string,
+	): Promise<{ ts: string; user: string; text: string }[]> => [],
+);
+const clearQueued = mock(async (_id: string, _ts: string) => {});
 mock.module("../utils/thread-sessions", () => ({
 	beginThreadRun: beginThread,
 	finishThreadRun: finishThread,
 	setThreadQuiet: setQuiet,
 	threadFollowUpsEnabled: followUpsEnabled,
+	readQueuedEvents: readQueued,
+	clearQueuedEventsThrough: clearQueued,
 	parseThreadCommand: (text: string) => {
 		const t = text
 			.replace(/<@[A-Z0-9]+>/g, "")
@@ -141,6 +164,18 @@ beforeEach(() => {
 	setQuiet.mockClear();
 	followUpsEnabled.mockReset();
 	followUpsEnabled.mockImplementation(async () => true);
+	release.mockClear();
+	publishJSON.mockClear();
+	readQueued.mockReset();
+	readQueued.mockImplementation(async () => []);
+	clearQueued.mockClear();
+});
+
+test("with the flag off, nothing is queued and nothing is handed back", async () => {
+	followUpsEnabled.mockImplementationOnce(async () => false);
+	await processAgentMessage(params);
+	expect(readQueued).not.toHaveBeenCalled();
+	expect(publishJSON).not.toHaveBeenCalled();
 });
 
 test("with the flag off, no session is opened, no memory is injected, and no quiet tool is offered", async () => {
@@ -178,7 +213,10 @@ test("!unmute reopens the thread without running the agent", async () => {
 });
 
 test("the agent is given the thread's quiet state and a way to change it", async () => {
-	beginThread.mockImplementationOnce(async () => ({ ...session, quiet: true }));
+	beginThread.mockImplementationOnce(async () => ({
+		status: "running",
+		session: { ...session, quiet: true },
+	}));
 	await processAgentMessage(params);
 	const args = runAgent.mock.calls[0]?.[0] as {
 		threadQuiet: { quiet: boolean; set: (q: boolean) => Promise<void> };
@@ -188,6 +226,131 @@ test("the agent is given the thread's quiet state and a way to change it", async
 	expect(setQuiet).toHaveBeenCalledWith(
 		expect.objectContaining({ threadTs: "1.0", quiet: false }),
 	);
+});
+
+test("a reply that arrives mid-turn is queued: no run, claim released, reaction kept", async () => {
+	beginThread.mockImplementationOnce(async () => ({ status: "queued" }));
+	await processAgentMessage(params);
+	expect(runAgent).not.toHaveBeenCalled();
+	expect(release).toHaveBeenCalledWith("delivery");
+	expect(finish).not.toHaveBeenCalled();
+	expect(removeReaction).not.toHaveBeenCalled();
+	expect(
+		postMessage.mock.calls.every(([a]) => a.text !== "**Completed**"),
+	).toBe(true);
+});
+
+test("after a turn, queued replies are handed back by re-delivering the newest one", async () => {
+	readQueued.mockImplementationOnce(async () => [
+		{ ts: "11.0", user: "U2", text: "first" },
+		{ ts: "12.0", user: "U3", text: "second" },
+	]);
+	await processAgentMessage(params);
+	expect(publishJSON).toHaveBeenCalledTimes(1);
+	expect(publishJSON.mock.calls[0]?.[0]).toMatchObject({
+		url: expect.stringContaining("/jobs/process-mention"),
+		deduplicationId: "queued:T1:12.0:10.0",
+		body: {
+			teamId: "T1",
+			eventId: "queued:T1:12.0:10.0",
+			event: {
+				channel_type: "channel",
+				ts: "12.0",
+				user: "U3",
+				text: "second",
+				thread_ts: "1.0",
+				queued_ts: ["11.0"],
+			},
+		},
+	});
+	expect(publishJSON.mock.calls[0]?.[0]).not.toHaveProperty("body.event.files");
+	expect(clearQueued).toHaveBeenCalledWith("thread-session", "12.0");
+});
+
+test("a reply queued mid-turn keeps its attachments through the hand-back", async () => {
+	const file = { id: "F1", mimetype: "image/png", url_private: "u" };
+	beginThread.mockImplementationOnce(async () => ({ status: "queued" }));
+	await processAgentMessage({
+		...params,
+		event: { ...params.event, files: [file] },
+	});
+	expect(beginThread.mock.calls[0]?.[0]).toMatchObject({
+		event: { ts: "10.0", files: [file] },
+	});
+	readQueued.mockImplementationOnce(async () => [
+		{ ts: "11.0", user: "U2", text: "see this", files: [file] },
+		{ ts: "12.0", user: "U3", text: "and this" },
+	]);
+	await processAgentMessage(params);
+	expect(publishJSON.mock.calls[0]?.[0]).toMatchObject({
+		body: { event: { ts: "12.0", files: [file] } },
+	});
+});
+
+test("a handed-back reply claims a delivery of its own, so a second hand-back can still run it", async () => {
+	await processAgentMessage({
+		...params,
+		eventId: "queued:T1:10.0:9.0",
+		event: {
+			...params.event,
+			type: "message",
+			channel_type: "channel",
+			queued_ts: [],
+		},
+	});
+	expect(claim.mock.calls[0]?.[0]).toMatchObject({
+		messageTs: "10.0",
+		handoff: "queued:T1:10.0:9.0",
+	});
+	await processAgentMessage(params);
+	expect(claim.mock.calls[1]?.[0]).toMatchObject({ handoff: undefined });
+});
+
+test("a failed hand-back leaves the queue for the next turn", async () => {
+	readQueued.mockImplementationOnce(async () => [
+		{ ts: "11.0", user: "U2", text: "first" },
+	]);
+	publishJSON.mockImplementationOnce(async () => {
+		throw new Error("qstash down");
+	});
+	await processAgentMessage(params);
+	expect(clearQueued).not.toHaveBeenCalled();
+	expect(postMessage.mock.calls.at(-1)?.[0].text).toBe("**Completed**");
+});
+
+test("a DM's queued replies go back through the assistant job as a DM", async () => {
+	readQueued.mockImplementationOnce(async () => [
+		{ ts: "11.0", user: "U2", text: "more" },
+	]);
+	await processAgentMessage({
+		...params,
+		event: { ...params.event, type: "message", channel_type: "im" },
+	});
+	expect(publishJSON.mock.calls[0]?.[0]).toMatchObject({
+		url: expect.stringContaining("/jobs/process-assistant-message"),
+		body: { event: { channel_type: "im", ts: "11.0", queued_ts: [] } },
+	});
+});
+
+test("a re-delivered queued message clears the reactions of the ones behind it", async () => {
+	await processAgentMessage({
+		...params,
+		event: {
+			...params.event,
+			type: "message",
+			channel_type: "channel",
+			queued_ts: ["8.0", "9.0"],
+		},
+	});
+	const cleared = removeReaction.mock.calls.map(
+		([a]) => (a as { timestamp: string }).timestamp,
+	);
+	expect(cleared).toEqual(["10.0", "8.0", "9.0"]);
+});
+
+test("the agent is told which thread messages it had already read", async () => {
+	await processAgentMessage(params);
+	expect(runAgent.mock.calls[0]?.[0]).toMatchObject({ lastContextTs: "5.0" });
 });
 
 test("a run opens the thread session, hands its memory to the agent, and records what was made", async () => {
@@ -207,6 +370,7 @@ test("a run opens the thread session, hands its memory to the agent, and records
 		channelId: "C1",
 		threadTs: "1.0",
 		userId: "linked-user",
+		event: { ts: "10.0", user: "U1", text: "Help" },
 	});
 	expect(runAgent.mock.calls[0]?.[0]).toMatchObject({
 		threadMemory: "fix-login (feat/login)",
@@ -221,6 +385,8 @@ test("a run opens the thread session, hands its memory to the agent, and records
 		],
 		lastContextTs: "10.0",
 	});
+	expect(readQueued).toHaveBeenCalledWith("thread-session");
+	expect(publishJSON).not.toHaveBeenCalled();
 });
 
 test("!mute quiets the thread without running the agent", async () => {

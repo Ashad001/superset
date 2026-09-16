@@ -2,11 +2,12 @@ import { db } from "@superset/db/client";
 import {
 	integrationConnections,
 	type SelectSlackThreadSession,
+	type SlackQueuedEvent,
 	type SlackThreadEntity,
 	slackThreadSessions,
 } from "@superset/db/schema";
 import { FEATURE_FLAGS } from "@superset/shared/constants";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { posthog } from "@/lib/analytics";
 import type { AgentAction } from "../slack-blocks";
 
@@ -14,6 +15,10 @@ const MAX_REMEMBERED_ENTITIES = 30;
 const MAX_LABEL_LENGTH = 80;
 const FLAG_CACHE_TTL_MS = 60_000;
 const FLAG_TIMEOUT_MS = 1_000;
+/** A run older than the job route's maxDuration with no finish belongs to a dead worker. */
+const STALE_RUN_MS = 6 * 60_000;
+const MAX_QUEUED_EVENTS = 20;
+const CLAIM_ATTEMPTS = 3;
 
 interface ThreadKey {
 	organizationId: string;
@@ -142,27 +147,106 @@ export async function setThreadQuiet(
 		});
 }
 
-/** Create or resume the thread's session and mark it running. */
+export type ThreadRunClaim =
+	| { status: "running"; session: SelectSlackThreadSession }
+	| { status: "queued" };
+
+/**
+ * Take the thread for this turn. Exactly one delivery owns a running
+ * session: an idle (or stale) session flips to running atomically, a
+ * missing one is inserted, and anything else queues the event for the
+ * owner to hand back when it finishes.
+ */
 export async function beginThreadRun(
-	key: ThreadKey & { userId: string },
-): Promise<SelectSlackThreadSession> {
-	const [session] = await db
-		.insert(slackThreadSessions)
-		.values({
-			organizationId: key.organizationId,
-			teamId: key.teamId,
-			channelId: key.channelId,
-			threadTs: key.threadTs,
-			startedByUserId: key.userId,
-			status: "running",
+	key: ThreadKey & { userId: string; event: SlackQueuedEvent },
+): Promise<ThreadRunClaim> {
+	for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt++) {
+		const now = new Date();
+		const [claimed] = await db
+			.update(slackThreadSessions)
+			.set({ status: "running", lastActivityAt: now })
+			.where(
+				and(
+					whereThread(key),
+					or(
+						eq(slackThreadSessions.status, "idle"),
+						lt(
+							slackThreadSessions.lastActivityAt,
+							new Date(now.getTime() - STALE_RUN_MS),
+						),
+					),
+				),
+			)
+			.returning();
+		if (claimed) return { status: "running", session: claimed };
+
+		const [inserted] = await db
+			.insert(slackThreadSessions)
+			.values({
+				organizationId: key.organizationId,
+				teamId: key.teamId,
+				channelId: key.channelId,
+				threadTs: key.threadTs,
+				startedByUserId: key.userId,
+				status: "running",
+			})
+			.onConflictDoNothing({ target: THREAD_CONFLICT_TARGET })
+			.returning();
+		if (inserted) return { status: "running", session: inserted };
+
+		// Only a running owner can hand the queue back, so queue only while
+		// one exists; if it finished in between, go round and claim instead.
+		const [queued] = await db
+			.update(slackThreadSessions)
+			.set({
+				queuedEvents: sql`(
+					SELECT COALESCE(jsonb_agg(e ORDER BY n), '[]'::jsonb)
+					FROM (
+						SELECT e, n FROM jsonb_array_elements(
+							${JSON.stringify([key.event])}::jsonb || ${slackThreadSessions.queuedEvents}
+						) WITH ORDINALITY AS q(e, n)
+						ORDER BY n
+						LIMIT ${MAX_QUEUED_EVENTS}
+					) AS newest
+				)`,
+			})
+			.where(and(whereThread(key), eq(slackThreadSessions.status, "running")))
+			.returning({ id: slackThreadSessions.id });
+		if (queued) return { status: "queued" };
+	}
+	throw new Error("Slack thread session could not be claimed or queued");
+}
+
+/** What arrived while the turn ran, oldest first. Nothing is removed. */
+export async function readQueuedEvents(
+	id: string,
+): Promise<SlackQueuedEvent[]> {
+	const row = await db.query.slackThreadSessions.findFirst({
+		where: eq(slackThreadSessions.id, id),
+		columns: { queuedEvents: true },
+	});
+	// Stored newest first.
+	return [...(row?.queuedEvents ?? [])].reverse();
+}
+
+/**
+ * Drop queued events up to and including `ts`, once their re-delivery is
+ * durable. Anything newer stays for the next hand-back.
+ */
+export async function clearQueuedEventsThrough(
+	id: string,
+	ts: string,
+): Promise<void> {
+	await db
+		.update(slackThreadSessions)
+		.set({
+			queuedEvents: sql`(
+				SELECT COALESCE(jsonb_agg(e), '[]'::jsonb)
+				FROM jsonb_array_elements(${slackThreadSessions.queuedEvents}) AS e
+				WHERE (e->>'ts')::numeric > ${ts}::numeric
+			)`,
 		})
-		.onConflictDoUpdate({
-			target: THREAD_CONFLICT_TARGET,
-			set: { status: "running", lastActivityAt: new Date() },
-		})
-		.returning();
-	if (!session) throw new Error("Slack thread session upsert returned no row");
-	return session;
+		.where(eq(slackThreadSessions.id, id));
 }
 
 export async function finishThreadRun(params: {
