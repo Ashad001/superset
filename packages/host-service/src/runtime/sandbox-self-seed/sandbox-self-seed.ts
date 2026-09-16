@@ -142,10 +142,10 @@ export function getStartHookState(): StartHookState {
 	return startHookState;
 }
 
-/** The tail of the hook's log, for a failure a person has to read. */
-function startHookLogTail(): string {
+/** The tail of a hook's log, for a failure a person has to read. */
+function readTail(path: string): string {
 	try {
-		return readFileSync(START_HOOK_LOG, "utf8").slice(-4000);
+		return readFileSync(path, "utf8").slice(-4000);
 	} catch {
 		return "";
 	}
@@ -174,17 +174,24 @@ export async function runSandboxStartHook(
 			? resolved.commands
 			: [`bash ${shellSingleQuote(resolved.scriptPath)}`];
 	if (!commands?.length) return { started: false, reason: "no-hook" };
-	const command = commands.join(" && ");
+	// A repository lists steps; running them as one `&&` chain made a step that
+	// failed take the rest with it. Each is its own process, and the services
+	// still come up when something earlier had nothing to do.
 	const configured = resolved?.cwd
 		? resolve(identity.hooksPath, resolved.cwd)
 		: identity.hooksPath;
 	const log = openSync(START_HOOK_LOG, "a");
-	const child = spawn("bash", ["-lc", command], {
-		cwd: existsSync(configured) ? configured : identity.hooksPath,
-		env: { ...process.env, ...getManagedEnv(), IS_SANDBOX: "1" },
-		stdio: ["ignore", log, log],
-		detached: true,
-	});
+	const command = commands.join("; ");
+	const child = spawn(
+		"bash",
+		["-lc", commands.map((one) => `{ ${one}; }`).join("\n")],
+		{
+			cwd: existsSync(configured) ? configured : identity.hooksPath,
+			env: { ...process.env, ...getManagedEnv(), IS_SANDBOX: "1" },
+			stdio: ["ignore", log, log],
+			detached: true,
+		},
+	);
 	child.unref();
 	const pid = child.pid ?? 0;
 	startHookState = { state: "running", command, pid, since: Date.now() };
@@ -194,7 +201,7 @@ export async function runSandboxStartHook(
 			command,
 			exitCode: code,
 			since: Date.now(),
-			log: startHookLogTail(),
+			log: readTail(START_HOOK_LOG),
 		};
 	});
 
@@ -214,7 +221,7 @@ export async function runSandboxStartHook(
 			reason: "failed",
 			command,
 			exitCode: failure,
-			log: startHookLogTail(),
+			log: readTail(START_HOOK_LOG),
 		};
 	}
 	// Written only now: a hook that failed to start must be runnable again on
