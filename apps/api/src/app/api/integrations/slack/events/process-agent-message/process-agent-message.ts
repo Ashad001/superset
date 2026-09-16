@@ -15,7 +15,10 @@ import {
 	SlackAgentError,
 } from "../utils/run-agent";
 import { formatSideEffectsMessage } from "../utils/slack-blocks";
-import { createSlackClient } from "../utils/slack-client";
+import {
+	createSlackClient,
+	slackRateLimitRetryAfterMs,
+} from "../utils/slack-client";
 import {
 	extractSlackImageAssets,
 	formatSlackImageAssetError,
@@ -198,25 +201,27 @@ export async function processAgentMessage({
 	// answers method_not_supported_for_channel_type anywhere else. Channels get
 	// a placeholder message that carries progress and is removed once the final
 	// reply exists, so the thread ends with one notifying message.
+	const deadline = Date.now() + RUN_BUDGET_MS;
+	const run = createSlackClient(connection.accessToken, { deadline });
 	const isDm = event.channel_type === "im";
 	let placeholderTs: string | undefined;
 
 	const showProgress = async (status: string) => {
 		try {
 			if (isDm) {
-				await slack.assistant.threads.setStatus({
+				await run.assistant.threads.setStatus({
 					channel_id: event.channel,
 					thread_ts: threadTs,
 					status,
 				});
 			} else if (placeholderTs) {
-				await slack.chat.update({
+				await run.chat.update({
 					channel: event.channel,
 					ts: placeholderTs,
 					text: status,
 				});
 			} else {
-				const posted = await slack.chat.postMessage({
+				const posted = await run.chat.postMessage({
 					channel: event.channel,
 					thread_ts: threadTs,
 					text: status,
@@ -230,13 +235,13 @@ export async function processAgentMessage({
 	const clearProgress = async () => {
 		try {
 			if (isDm) {
-				await slack.assistant.threads.setStatus({
+				await run.assistant.threads.setStatus({
 					channel_id: event.channel,
 					thread_ts: threadTs,
 					status: "",
 				});
 			} else if (placeholderTs) {
-				await slack.chat.delete({ channel: event.channel, ts: placeholderTs });
+				await run.chat.delete({ channel: event.channel, ts: placeholderTs });
 				placeholderTs = undefined;
 			}
 		} catch {
@@ -245,7 +250,7 @@ export async function processAgentMessage({
 	};
 	const removeEyes = async () => {
 		try {
-			await slack.reactions.remove({
+			await run.reactions.remove({
 				channel: event.channel,
 				timestamp: event.ts,
 				name: "eyes",
@@ -262,7 +267,7 @@ export async function processAgentMessage({
 	});
 	if (claim.status === "duplicate") return;
 	if (claim.status === "stale") {
-		await slack.chat.postMessage({
+		await run.chat.postMessage({
 			channel: event.channel,
 			thread_ts: threadTs,
 			text: LOST_TRACK_TEXT,
@@ -272,12 +277,11 @@ export async function processAgentMessage({
 		return;
 	}
 	const deliveryId = claim.id;
-	const deadline = Date.now() + RUN_BUDGET_MS;
 	let delivered = false;
 
 	try {
 		try {
-			await slack.reactions.add({
+			await run.reactions.add({
 				channel: event.channel,
 				timestamp: event.ts,
 				name: "eyes",
@@ -292,14 +296,14 @@ export async function processAgentMessage({
 
 		const imageAssets = await extractSlackImageAssets({
 			eventFiles: event.files,
-			slack,
+			slack: run,
 			slackToken: connection.accessToken,
 			deadline,
 		});
 
 		const resolve = await resolveUserMentions({
 			texts: [event.text ?? ""],
-			slack,
+			slack: run,
 		});
 
 		const result = await runSlackAgent({
@@ -319,12 +323,21 @@ export async function processAgentMessage({
 		// A new final reply notifies thread participants; editing a placeholder
 		// silently would not. Model output goes in Slack's Markdown block.
 		for (const text of splitMarkdown(result.text)) {
-			await slack.chat.postMessage({
-				channel: event.channel,
-				thread_ts: threadTs,
-				text,
-				blocks: [{ type: "markdown", text }],
-			});
+			const post = () =>
+				run.chat.postMessage({
+					channel: event.channel,
+					thread_ts: threadTs,
+					text,
+					blocks: [{ type: "markdown", text }],
+				});
+			try {
+				await post();
+			} catch (error) {
+				const wait = slackRateLimitRetryAfterMs(error);
+				if (wait === undefined || Date.now() + wait >= deadline) throw error;
+				await new Promise((resolve) => setTimeout(resolve, wait));
+				await post();
+			}
 		}
 		delivered = true;
 
@@ -342,7 +355,7 @@ export async function processAgentMessage({
 		// Post side effects as a separate message
 		if (result.actions.length > 0) {
 			try {
-				await slack.chat.postMessage({
+				await run.chat.postMessage({
 					channel: event.channel,
 					thread_ts: threadTs,
 					text: formatSideEffectsMessage(result.actions),
@@ -362,8 +375,8 @@ export async function processAgentMessage({
 				? formatSlackImageAssetError(err)
 				: err instanceof SlackAgentError
 					? err.message
-					: await formatErrorForSlack(err);
-		await slack.chat.postMessage({
+					: await formatErrorForSlack(err, deadline);
+		await run.chat.postMessage({
 			channel: event.channel,
 			thread_ts: threadTs,
 			text: errorText,
