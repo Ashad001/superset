@@ -37,9 +37,11 @@ import {
 	finishThreadRun,
 	parseThreadCommand,
 	renderThreadMemory,
+	requestThreadStop,
 	setThreadQuiet,
 	takeQueuedEvents,
 	threadFollowUpsEnabled,
+	threadStopRequested,
 } from "../utils/thread-sessions";
 
 import { splitMarkdown } from "./utils/split-markdown";
@@ -58,6 +60,8 @@ const LOST_TRACK_TEXT =
 const QUIETED_TEXT =
 	"Got it. I'll stay out of this thread unless someone mentions me.";
 const UNQUIETED_TEXT = "Got it. I'll answer replies in this thread again.";
+const STOPPING_TEXT = "Stopping.";
+const NOTHING_RUNNING_TEXT = "Nothing is running in this thread.";
 const JOB_URLS = {
 	mention: `${env.NEXT_PUBLIC_API_URL}/api/integrations/slack/jobs/process-mention`,
 	assistant: `${env.NEXT_PUBLIC_API_URL}/api/integrations/slack/jobs/process-assistant-message`,
@@ -252,9 +256,10 @@ export async function processAgentMessage({
 	// closed since, and the unflagged path never runs the agent for one.
 	const isFollowUp = event.type === "message" && !isDm;
 	if (isFollowUp && !sessions) return;
-	// Every DM already reaches the agent, so quieting means nothing there.
-	const command =
-		sessions && !isDm ? parseThreadCommand(event.text ?? "") : null;
+	// Every DM already reaches the agent, so quieting means nothing there;
+	// stopping a turn does.
+	const parsed = sessions ? parseThreadCommand(event.text ?? "") : null;
+	const command = isDm && parsed !== "stop" ? null : parsed;
 	// assistant.threads.setStatus only works in assistant (DM) threads; Slack
 	// answers method_not_supported_for_channel_type anywhere else. Channels get
 	// a placeholder message that carries progress and is removed once the final
@@ -344,11 +349,19 @@ export async function processAgentMessage({
 	if (command) {
 		let applied = false;
 		try {
-			await setThreadQuiet({ ...threadKey, quiet: command === "mute" });
+			let text: string;
+			if (command === "stop") {
+				text = (await requestThreadStop(threadKey, event.ts))
+					? STOPPING_TEXT
+					: NOTHING_RUNNING_TEXT;
+			} else {
+				await setThreadQuiet({ ...threadKey, quiet: command === "mute" });
+				text = command === "mute" ? QUIETED_TEXT : UNQUIETED_TEXT;
+			}
 			await reply.chat.postMessage({
 				channel: event.channel,
 				thread_ts: threadTs,
-				text: command === "mute" ? QUIETED_TEXT : UNQUIETED_TEXT,
+				text,
 			});
 			applied = true;
 		} finally {
@@ -431,6 +444,7 @@ export async function processAgentMessage({
 				? {
 						threadMemory: renderThreadMemory(threadSession.entityLog),
 						lastContextTs: threadSession.lastContextTs ?? undefined,
+						shouldStop: () => threadStopRequested(threadSession.id, event.ts),
 						...(isDm
 							? {}
 							: {
