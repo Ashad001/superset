@@ -660,6 +660,10 @@ msgstr "{distance} 전"
 msgid "{duration, plural, one {Thought for # second} other {Thought for # seconds}}"
 msgstr "{duration, plural, one {#초 동안 생각함} other {#초 동안 생각함}}"
 
+#. js-lingui-explicit-id
+msgid "serverError.page.entryPathHeldByAnotherOrganization"
+msgstr "이 워크스페이스의 {entryPath}는 다른 조직에서 이미 페이지로 게시되었습니다. 파일을 옮기거나 해당 페이지 ID로 게시하세요."
+
 msgid "{failed, plural, one {# failed} other {# failed}}"
 msgstr "{failed, plural, one {#개 실패} other {#개 실패}}"
 
@@ -1198,6 +1202,10 @@ msgstr "더 나은 인앱 브라우저입니다. 변경 사항을 미리 보고,
 
 msgid "A better Superset is ready"
 msgstr "더 나은 Superset이 준비되었습니다"
+
+#. js-lingui-explicit-id
+msgid "serverError.common.cloudWorkspaceCannotCallThis"
+msgstr "클라우드 워크스페이스에서는 {path}를 호출할 수 없습니다. 로그인한 클라이언트에서 실행하세요."
 
 msgid "A delete is already in progress for {workspaceName}."
 msgstr "{workspaceName}에 대한 삭제가 이미 진행 중입니다."
@@ -13723,6 +13731,10 @@ msgstr "일부 테마를 건너뛰었습니다"
 
 msgid "Some triggers need additional configuration"
 msgstr "일부 트리거에는 추가 설정이 필요합니다"
+
+#. js-lingui-explicit-id
+msgid "serverError.page.entryPathHeldByColleague"
+msgstr "다른 사람이 이 워크스페이스의 {entryPath}를 이미 게시했습니다. 페이지 ID를 명시해 그 페이지에 버전을 추가하거나 파일을 옮기세요."
 
 msgid "someone external"
 msgstr "외부 참석자"

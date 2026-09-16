@@ -660,6 +660,10 @@ msgstr "{distance}前"
 msgid "{duration, plural, one {Thought for # second} other {Thought for # seconds}}"
 msgstr "{duration, plural, one {思考了#秒} other {思考了#秒}}"
 
+#. js-lingui-explicit-id
+msgid "serverError.page.entryPathHeldByAnotherOrganization"
+msgstr "该工作区中的 {entryPath} 已在另一个组织中发布为页面。请移动该文件，或使用那个页面的 id 发布。"
+
 msgid "{failed, plural, one {# failed} other {# failed}}"
 msgstr "{failed, plural, one {#项失败} other {#项失败}}"
 
@@ -1198,6 +1202,10 @@ msgstr "更好用的应用内浏览器：预览改动，点击任意元素即可
 
 msgid "A better Superset is ready"
 msgstr "更好的 Superset 已准备就绪"
+
+#. js-lingui-explicit-id
+msgid "serverError.common.cloudWorkspaceCannotCallThis"
+msgstr "云端工作区无法调用 {path}。请在你已登录的客户端中执行。"
 
 msgid "A delete is already in progress for {workspaceName}."
 msgstr "{workspaceName}已经在删除中。"
@@ -13723,6 +13731,10 @@ msgstr "部分主题已被跳过"
 
 msgid "Some triggers need additional configuration"
 msgstr "部分触发器需要额外配置"
+
+#. js-lingui-explicit-id
+msgid "serverError.page.entryPathHeldByColleague"
+msgstr "其他人已发布该工作区中的 {entryPath}。使用明确的页面 id 发布以向其页面添加版本，或移动该文件。"
 
 msgid "someone external"
 msgstr "外部人员"

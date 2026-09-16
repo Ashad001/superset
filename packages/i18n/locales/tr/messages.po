@@ -660,6 +660,10 @@ msgstr "{distance} önce"
 msgid "{duration, plural, one {Thought for # second} other {Thought for # seconds}}"
 msgstr "{duration, plural, one {# saniye düşündü} other {# saniye düşündü}}"
 
+#. js-lingui-explicit-id
+msgid "serverError.page.entryPathHeldByAnotherOrganization"
+msgstr "Bu çalışma alanındaki {entryPath} başka bir organizasyonda zaten sayfa olarak yayımlanmış. Dosyayı taşı ya da o sayfanın kimliğiyle yayımla."
+
 msgid "{failed, plural, one {# failed} other {# failed}}"
 msgstr "{failed, plural, one {# başarısız} other {# başarısız}}"
 
@@ -1198,6 +1202,10 @@ msgstr "Daha iyi bir uygulama içi tarayıcı: değişikliklerinizi önizleyin v
 
 msgid "A better Superset is ready"
 msgstr "Daha iyi bir Superset hazır"
+
+#. js-lingui-explicit-id
+msgid "serverError.common.cloudWorkspaceCannotCallThis"
+msgstr "Bulut çalışma alanı {path} çağıramaz. Bunu oturum açtığın bir istemciden yap."
 
 msgid "A delete is already in progress for {workspaceName}."
 msgstr "{workspaceName} için zaten bir silme işlemi sürüyor."
@@ -13723,6 +13731,10 @@ msgstr "Bazı temalar atlandı"
 
 msgid "Some triggers need additional configuration"
 msgstr "Bazı tetikleyiciler ek yapılandırma gerektiriyor"
+
+#. js-lingui-explicit-id
+msgid "serverError.page.entryPathHeldByColleague"
+msgstr "Bu çalışma alanından {entryPath} dosyasını başkası zaten yayımlamış. Onun sayfasına sürüm eklemek için açık bir sayfa kimliğiyle yayımla ya da dosyayı taşı."
 
 msgid "someone external"
 msgstr "dışarıdan biri"

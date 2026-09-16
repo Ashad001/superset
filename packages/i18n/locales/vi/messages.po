@@ -660,6 +660,10 @@ msgstr "{distance} trước"
 msgid "{duration, plural, one {Thought for # second} other {Thought for # seconds}}"
 msgstr "{duration, plural, one {Đã suy nghĩ # giây} other {Đã suy nghĩ # giây}}"
 
+#. js-lingui-explicit-id
+msgid "serverError.page.entryPathHeldByAnotherOrganization"
+msgstr "{entryPath} trong workspace này đã được xuất bản thành một trang ở tổ chức khác. Hãy di chuyển tệp hoặc xuất bản kèm id của trang đó."
+
 msgid "{failed, plural, one {# failed} other {# failed}}"
 msgstr "{failed, plural, one {# thất bại} other {# thất bại}}"
 
@@ -1198,6 +1202,10 @@ msgstr "Trình duyệt trong ứng dụng tốt hơn: xem trước thay đổi v
 
 msgid "A better Superset is ready"
 msgstr "Phiên bản Superset tốt hơn đã sẵn sàng"
+
+#. js-lingui-explicit-id
+msgid "serverError.common.cloudWorkspaceCannotCallThis"
+msgstr "Workspace trên cloud không thể gọi {path}. Hãy làm việc này từ một client bạn đã đăng nhập."
 
 msgid "A delete is already in progress for {workspaceName}."
 msgstr "Đang có một thao tác xóa cho {workspaceName}."
@@ -13723,6 +13731,10 @@ msgstr "Một số theme đã bị bỏ qua"
 
 msgid "Some triggers need additional configuration"
 msgstr "Một số trigger cần cấu hình thêm"
+
+#. js-lingui-explicit-id
+msgid "serverError.page.entryPathHeldByColleague"
+msgstr "Người khác đã xuất bản {entryPath} từ workspace này. Hãy xuất bản kèm id trang cụ thể để thêm phiên bản vào trang của họ, hoặc di chuyển tệp."
 
 msgid "someone external"
 msgstr "người bên ngoài"

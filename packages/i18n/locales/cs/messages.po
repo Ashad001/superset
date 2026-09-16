@@ -660,6 +660,10 @@ msgstr "před {distance}"
 msgid "{duration, plural, one {Thought for # second} other {Thought for # seconds}}"
 msgstr "{duration, plural, one {Přemýšlel # sekundu} few {Přemýšlel # sekundy} many {Přemýšlel # sekundy} other {Přemýšlel # sekund}}"
 
+#. js-lingui-explicit-id
+msgid "serverError.page.entryPathHeldByAnotherOrganization"
+msgstr "{entryPath} v tomto workspace je už publikovaný jako stránka v jiné organizaci. Přesuň soubor nebo publikuj s ID té stránky."
+
 msgid "{failed, plural, one {# failed} other {# failed}}"
 msgstr "{failed, plural, one {# selhalo} few {# selhalo} many {# selhalo} other {# selhalo}}"
 
@@ -1198,6 +1202,10 @@ msgstr "Lepší vestavěný prohlížeč: prohlédněte si své změny a kliknut
 
 msgid "A better Superset is ready"
 msgstr "Lepší verze Superset je připravena"
+
+#. js-lingui-explicit-id
+msgid "serverError.common.cloudWorkspaceCannotCallThis"
+msgstr "Cloudový workspace nemůže volat {path}. Spusť to z klienta, kde jsi přihlášený."
 
 msgid "A delete is already in progress for {workspaceName}."
 msgstr "Mazání {workspaceName} už probíhá."
@@ -13723,6 +13731,10 @@ msgstr "Některé motivy byly přeskočeny"
 
 msgid "Some triggers need additional configuration"
 msgstr "Některé spouštěče potřebují další nastavení"
+
+#. js-lingui-explicit-id
+msgid "serverError.page.entryPathHeldByColleague"
+msgstr "Někdo jiný už {entryPath} z tohoto workspace publikoval. Publikuj s výslovným ID stránky a přidej verzi k jeho stránce, nebo soubor přesuň."
 
 msgid "someone external"
 msgstr "někdo externí"

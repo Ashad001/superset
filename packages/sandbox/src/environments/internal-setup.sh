@@ -102,14 +102,19 @@ printf '%s %s\n' "$name" "$branch" > "$STAMP"
 WORKSPACEDB
 sudo chmod 755 /usr/local/bin/superset-workspace-db
 
-# The environment's start hook. With a .env in place it brings the dev stack
-# up on the display: api, web and the Electron desktop, the same tasks
-# `bun dev` runs, in tmux so the logs are reachable from any terminal
-# (`tmux attach -t superset`).
+# The work itself lives in the repository now (.superset/setup.cloud.sh and
+# .superset/dev-stack.cloud.sh). This shim stays because a branch checked out
+# from before that change still asks for `superset-dev-stack` by name.
 sudo tee /usr/local/bin/superset-dev-stack >/dev/null <<'DEVSTACK'
 #!/usr/bin/env bash
-# Runs in the checkout: the box's start hook has the hooks repository as cwd.
+# Compatibility shim: the scripts are in the checkout now.
+set -uo pipefail
 ws="$PWD"
+if [ -x "$ws/.superset/dev-stack.cloud.sh" ]; then
+  exec "$ws/.superset/dev-stack.cloud.sh"
+fi
+# A branch older than those scripts still asks for this command by name, and
+# gets what it used to: the environment's own copy.
 superset-materialize-env "$ws/.env"
 superset-workspace-db "$ws/.env" > /var/log/superset/workspace-db.log 2>&1
 if [ -f "$ws/.env" ] && command -v tmux >/dev/null; then
@@ -122,7 +127,7 @@ if [ -f "$ws/.env" ] && command -v tmux >/dev/null; then
 fi
 DEVSTACK
 sudo chmod 755 /usr/local/bin/superset-dev-stack
-log "dev stack scripts installed"
+log "dev stack shim installed"
 
 if [ ! -d "$HOME/.oh-my-zsh" ]; then
   sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" \

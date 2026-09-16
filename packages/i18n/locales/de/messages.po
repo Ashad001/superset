@@ -660,6 +660,10 @@ msgstr "vor {distance}"
 msgid "{duration, plural, one {Thought for # second} other {Thought for # seconds}}"
 msgstr "{duration, plural, one {# Sekunde nachgedacht} other {# Sekunden nachgedacht}}"
 
+#. js-lingui-explicit-id
+msgid "serverError.page.entryPathHeldByAnotherOrganization"
+msgstr "{entryPath} wird in diesem Workspace bereits als Seite in einer anderen Organisation veröffentlicht. Verschiebe die Datei oder veröffentliche mit der ID jener Seite."
+
 msgid "{failed, plural, one {# failed} other {# failed}}"
 msgstr "{failed, plural, one {# fehlgeschlagen} other {# fehlgeschlagen}}"
 
@@ -1198,6 +1202,10 @@ msgstr "Ein besserer In-App-Browser: Änderungen in der Vorschau ansehen und ein
 
 msgid "A better Superset is ready"
 msgstr "Eine bessere Version von Superset ist bereit"
+
+#. js-lingui-explicit-id
+msgid "serverError.common.cloudWorkspaceCannotCallThis"
+msgstr "Ein Cloud-Workspace kann {path} nicht aufrufen. Führe das in einem Client aus, in dem du angemeldet bist."
 
 msgid "A delete is already in progress for {workspaceName}."
 msgstr "Für {workspaceName} läuft bereits ein Löschvorgang."
@@ -13723,6 +13731,10 @@ msgstr "Einige Themes wurden übersprungen"
 
 msgid "Some triggers need additional configuration"
 msgstr "Einige Trigger brauchen weitere Konfiguration"
+
+#. js-lingui-explicit-id
+msgid "serverError.page.entryPathHeldByColleague"
+msgstr "Jemand anderes hat {entryPath} aus diesem Workspace bereits veröffentlicht. Veröffentliche mit einer ausdrücklichen Seiten-ID, um eine Version zu dessen Seite hinzuzufügen, oder verschiebe die Datei."
 
 msgid "someone external"
 msgstr "jemand Externes"

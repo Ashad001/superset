@@ -276,7 +276,7 @@ const checks: Array<[label: string, command: string, expect: RegExp]> = [
 	],
 	[
 		"dev stack start hook",
-		"test -x /usr/local/bin/superset-dev-stack && test -x /usr/local/bin/superset-workspace-db && echo ok",
+		"test -x /usr/local/bin/superset-dev-stack && test -x /workspace/.superset/setup.cloud.sh && echo ok",
 		/ok/,
 	],
 	["neonctl", "neonctl --version", /^\d+\.\d+/m],
@@ -337,7 +337,8 @@ if (ENV_FILE) {
 const probe = `ws-release-probe-${Date.now().toString(36)}`;
 const probeWorkspaceId = randomUUID();
 const probeSecret = await sandboxHostSecretFor(probeWorkspaceId);
-const { networkPolicy, managedEnv } = deriveSandboxCredentials({
+const { networkPolicy, managedEnv } = await deriveSandboxCredentials({
+	workspaceId: probeWorkspaceId,
 	environmentEnv: probeEnv,
 	userAgentEnv: {},
 	githubToken: null,
