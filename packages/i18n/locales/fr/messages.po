@@ -6658,6 +6658,9 @@ msgstr "terminé · a travaillé 7 s"
 msgid "First sign-in view → auth → onboarding → real workspace (last 7d, 2d window)"
 msgstr "Première vue de connexion → auth → onboarding → espace de travail réel (7 derniers jours, fenêtre de 2 j)"
 
+msgid "First time here? Turn on Remote Access in the desktop app under Settings → Remote Access."
+msgstr "Première fois ici ? Activez l'accès distant dans l'application de bureau, sous Paramètres → Accès distant."
+
 msgid "First-ever pageview on superset.sh, daily"
 msgstr "Toute première page vue sur superset.sh, par jour"
 
@@ -13280,6 +13283,9 @@ msgstr "Configurer le projet sur {hostName}"
 
 msgid "Set up project…"
 msgstr "Configurer le projet…"
+
+msgid "Set up remote access"
+msgstr "Configurer l'accès distant"
 
 msgid "Set up this project for Superset"
 msgstr "Configurer ce projet pour Superset"
