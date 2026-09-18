@@ -46,6 +46,7 @@ import { useAutoAdoptBackgroundSessions } from "./hooks/useAutoAdoptBackgroundSe
 import { useClearActivePaneAttention } from "./hooks/useClearActivePaneAttention";
 import { useConsumeAutomationRunLink } from "./hooks/useConsumeAutomationRunLink";
 import { useConsumeOpenUrlRequest } from "./hooks/useConsumeOpenUrlRequest";
+import { useConsumePageOpenLink } from "./hooks/useConsumePageOpenLink";
 import { useConsumeSubagentLink } from "./hooks/useConsumeSubagentLink";
 import { useCreatePendingMigratedTerminals } from "./hooks/useCreatePendingMigratedTerminals";
 import { useDefaultContextMenuActions } from "./hooks/useDefaultContextMenuActions";
@@ -68,7 +69,7 @@ import { useWorkspaceHotkeys } from "./hooks/useWorkspaceHotkeys";
 import { useWorkspacePaneOpeners } from "./hooks/useWorkspacePaneOpeners";
 import { WorkspaceGitStatusProvider } from "./providers/WorkspaceGitStatusProvider";
 import { FileDocumentStoreProvider } from "./state/fileDocumentStore";
-import type { PaneViewerData } from "./types";
+import type { ConsumeSearch, PaneViewerData } from "./types";
 import { findVisibleChangesPane } from "./utils/openChangesPaneInStore";
 import type { V2WorkspaceUrlOpenTarget } from "./utils/openUrlInV2Workspace";
 
@@ -83,6 +84,8 @@ interface WorkspaceSearch {
 	openUrl?: string;
 	openUrlTarget?: V2WorkspaceUrlOpenTarget;
 	openUrlRequestId?: string;
+	pageId?: string;
+	pageSlug?: string;
 }
 
 function parseOpenUrlTarget(
@@ -107,6 +110,8 @@ export const Route = createFileRoute(
 		openUrl: parseNonEmptyString(raw.openUrl),
 		openUrlTarget: parseOpenUrlTarget(raw.openUrlTarget),
 		openUrlRequestId: parseNonEmptyString(raw.openUrlRequestId),
+		pageId: parseNonEmptyString(raw.pageId),
+		pageSlug: parseNonEmptyString(raw.pageSlug),
 	}),
 });
 
@@ -150,9 +155,25 @@ function V2WorkspaceContent() {
 		openUrl,
 		openUrlTarget,
 		openUrlRequestId,
+		pageId,
+		pageSlug,
 	} = Route.useSearch();
 	const { workspace } = useWorkspace();
 	const workspaceId = workspace.id;
+	const navigate = Route.useNavigate();
+	const consumeSearch = useCallback<ConsumeSearch>(
+		(keys) => {
+			void navigate({
+				search: (prev) => ({
+					...prev,
+					...Object.fromEntries(keys.map((key) => [key, undefined])),
+					focusRequestId: undefined,
+				}),
+				replace: true,
+			});
+		},
+		[navigate],
+	);
 
 	const {
 		preferences: v2UserPreferences,
@@ -185,6 +206,7 @@ function V2WorkspaceContent() {
 		workspaceId,
 		terminalId,
 		focusRequestId,
+		consumeSearch,
 	});
 	const subagentLink = useMemo(
 		() =>
@@ -201,6 +223,7 @@ function V2WorkspaceContent() {
 		isLayoutReady,
 		link: subagentLink,
 		focusRequestId,
+		consumeSearch,
 	});
 	useCreatePendingMigratedTerminals({ workspaceId, isLayoutReady });
 	useRunWorkspaceCreationPresets({
@@ -215,6 +238,7 @@ function V2WorkspaceContent() {
 		url: openUrl,
 		target: openUrlTarget,
 		requestId: openUrlRequestId,
+		consumeSearch,
 	});
 
 	const {
@@ -265,6 +289,14 @@ function V2WorkspaceContent() {
 		(state) => findVisibleChangesPane(state) != null,
 	);
 
+	useConsumePageOpenLink({
+		isLayoutReady,
+		pageId,
+		pageSlug,
+		focusRequestId,
+		openPagePane,
+		consumeSearch,
+	});
 	usePagePaneIntentOpener({ workspaceId, isLayoutReady, openPagePane });
 	usePullRequestPaneIntentOpener({
 		workspaceId,
