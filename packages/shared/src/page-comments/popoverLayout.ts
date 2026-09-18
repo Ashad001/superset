@@ -1,5 +1,3 @@
-import { PIN_SIZE, type PinPoint } from "../../../../utils/pinLayout";
-
 const WIDTH = 350;
 const GAP = 10;
 const EDGE = 12;
@@ -9,6 +7,11 @@ const EDGE = 12;
  * narrow gets an overflowing card rather than an unreadable one.
  */
 const MIN_WIDTH = 240;
+
+export interface PopoverPoint {
+	x: number;
+	y: number;
+}
 
 export interface PopoverPlacement {
 	left: number;
@@ -20,22 +23,26 @@ export function popoverPlacement({
 	point,
 	container,
 	height,
+	pinSize,
+	maxWidth = WIDTH,
 }: {
-	point: PinPoint;
+	point: PopoverPoint;
 	container: { width: number; height: number };
 	height: number;
+	pinSize: number;
+	maxWidth?: number;
 }): PopoverPlacement {
 	const width = Math.max(
 		MIN_WIDTH,
-		Math.min(WIDTH, container.width - EDGE * 2),
+		Math.min(maxWidth, container.width - EDGE * 2),
 	);
 	// The pin's box hangs up and to the right of its point: it spans
-	// [point.y - PIN_SIZE, point.y] vertically and starts at point.x.
+	// [point.y - pinSize, point.y] vertically and starts at point.x.
 	const belowTop = point.y + GAP;
 	const top =
 		belowTop + height + EDGE <= container.height
 			? belowTop
-			: Math.max(EDGE, point.y - PIN_SIZE - GAP - height);
+			: Math.max(EDGE, point.y - pinSize - GAP - height);
 	const left = Math.min(
 		Math.max(EDGE, point.x),
 		Math.max(EDGE, container.width - width - EDGE),

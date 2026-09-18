@@ -274,6 +274,10 @@ msgstr "{0, plural, one {# weitere Zeile anzeigen} other {# weitere Zeilen anzei
 msgid "{0, plural, one {This will import # existing worktree into Superset as workspaces. Each worktree on disk will be tracked and appear in your sidebar. No files will be modified.} other {This will import # existing worktrees into Superset as workspaces. Each worktree on disk will be tracked and appear in your sidebar. No files will be modified.}}"
 msgstr "{0, plural, one {Damit wird # vorhandener Worktree als Arbeitsbereich in Superset importiert. Jeder Worktree auf der Festplatte wird nachverfolgt und erscheint in deiner Seitenleiste. Es werden keine Dateien verändert.} other {Damit werden # vorhandene Worktrees als Arbeitsbereiche in Superset importiert. Jeder Worktree auf der Festplatte wird nachverfolgt und erscheint in deiner Seitenleiste. Es werden keine Dateien verändert.}}"
 
+#. placeholder {0}: resolved.length
+msgid "{0, plural, one {View # resolved comment} other {View # resolved comments}}"
+msgstr "{0, plural, one {# aufgelösten Kommentar anzeigen} other {# aufgelöste Kommentare anzeigen}}"
+
 #. placeholder {0}: mine.length
 msgid "{0, plural, one {Watching # page for comments} other {Watching # pages for comments}}"
 msgstr "{0, plural, one {Beobachtet # Seite auf Kommentare} other {Beobachtet # Seiten auf Kommentare}}"
@@ -1406,6 +1410,9 @@ msgstr "Hinzufügen"
 #. placeholder {0}: AGENT_LABELS[agent]
 msgid "Add {0} account"
 msgstr "{0}-Konto hinzufügen"
+
+msgid "Add a comment…"
+msgstr "Kommentar hinzufügen…"
 
 msgid "Add a lifecycle run script in Project Settings or mark a terminal script as the workspace run."
 msgstr "Füge in den Projekteinstellungen ein Lifecycle-Run-Skript hinzu oder markiere ein Terminal-Skript als Arbeitsbereich-Run."
@@ -2862,6 +2869,9 @@ msgstr "Bearbeitung abbrechen"
 msgid "Cancel plan"
 msgstr "Tarif kündigen"
 
+msgid "Cancel reply"
+msgstr "Antwort abbrechen"
+
 msgid "Canceled"
 msgstr "Abgebrochen"
 
@@ -3597,6 +3607,9 @@ msgstr "Kommentiert"
 
 msgid "Comments"
 msgstr "Kommentare"
+
+msgid "Comments could not be loaded"
+msgstr "Kommentare konnten nicht geladen werden"
 
 msgid "Comments go to this agent"
 msgstr "Kommentare gehen an diesen Agent"
@@ -7209,6 +7222,9 @@ msgstr "Pull-Request-Vorschau ausblenden"
 
 msgid "Hide resolved ({resolvedCount})"
 msgstr "Aufgelöste ausblenden ({resolvedCount})"
+
+msgid "Hide resolved comments"
+msgstr "Aufgelöste Kommentare ausblenden"
 
 msgid "Hide review comments"
 msgstr "Review-Kommentare ausblenden"
@@ -12055,6 +12071,9 @@ msgstr "Antworten"
 msgid "Reply to thread…"
 msgstr "Auf den Thread antworten…"
 
+msgid "Replying to {replyingTo}"
+msgstr "Antwort an {replyingTo}"
+
 msgid "repo"
 msgstr "Repo"
 
@@ -14535,9 +14554,6 @@ msgstr "Sprich mit Superset"
 msgid "Tap anything on the page to comment on it"
 msgstr "Tippe auf ein Element der Seite, um es zu kommentieren"
 
-msgid "Tap the focus button to comment on a block."
-msgstr "Tippe auf den Fokus-Button, um einen Block zu kommentieren."
-
 msgid "Target agent"
 msgstr "Ziel-Agent"
 
@@ -15144,9 +15160,6 @@ msgstr "Dadurch werden die ausgewählten Arbeitsbereiche und ihre Terminals gesc
 
 msgid "This closes the workspace and its terminals. The project's files, branches and other workspaces stay as they are."
 msgstr "Dadurch werden der Arbeitsbereich und seine Terminals geschlossen. Die Dateien, Branches und anderen Arbeitsbereiche des Projekts bleiben unverändert."
-
-msgid "This comment is no longer here"
-msgstr "Diesen Kommentar gibt es nicht mehr"
 
 msgid "This deletes the saved scrollback used for reboot/crash recovery."
 msgstr "Damit wird der gespeicherte Scrollback gelöscht, der für Neustart- und Absturzwiederherstellung genutzt wird."
@@ -16672,6 +16685,9 @@ msgstr "Arbeitsbereich erstellt"
 
 msgid "Workspace created from PR"
 msgstr "Arbeitsbereich aus PR erstellt"
+
+msgid "Workspace details"
+msgstr "Arbeitsbereichsdetails"
 
 msgid "Workspace ID copied"
 msgstr "Arbeitsbereich-ID kopiert"

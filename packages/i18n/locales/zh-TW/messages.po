@@ -274,6 +274,10 @@ msgstr "{0, plural, one {再顯示#行} other {再顯示#行}}"
 msgid "{0, plural, one {This will import # existing worktree into Superset as workspaces. Each worktree on disk will be tracked and appear in your sidebar. No files will be modified.} other {This will import # existing worktrees into Superset as workspaces. Each worktree on disk will be tracked and appear in your sidebar. No files will be modified.}}"
 msgstr "{0, plural, one {這會把#個已有worktree作為工作區匯入Superset。磁碟上的每個worktree都會被追蹤並出現在側邊欄裡。不會修改任何檔案。} other {這會把#個已有worktree作為工作區匯入Superset。磁碟上的每個worktree都會被追蹤並出現在側邊欄裡。不會修改任何檔案。}}"
 
+#. placeholder {0}: resolved.length
+msgid "{0, plural, one {View # resolved comment} other {View # resolved comments}}"
+msgstr "{0, plural, other {查看 # 則已解決的留言}}"
+
 #. placeholder {0}: mine.length
 msgid "{0, plural, one {Watching # page for comments} other {Watching # pages for comments}}"
 msgstr "{0, plural, one {正在關注#個頁面的評論} other {正在關注#個頁面的評論}}"
@@ -1406,6 +1410,9 @@ msgstr "新增"
 #. placeholder {0}: AGENT_LABELS[agent]
 msgid "Add {0} account"
 msgstr "新增{0}帳戶"
+
+msgid "Add a comment…"
+msgstr "新增留言…"
 
 msgid "Add a lifecycle run script in Project Settings or mark a terminal script as the workspace run."
 msgstr "在專案設定中新增生命週期執行指令碼，或將某個終端指令碼標記為工作區執行命令。"
@@ -2862,6 +2869,9 @@ msgstr "取消編輯"
 msgid "Cancel plan"
 msgstr "取消方案"
 
+msgid "Cancel reply"
+msgstr "取消回覆"
+
 msgid "Canceled"
 msgstr "已取消"
 
@@ -3597,6 +3607,9 @@ msgstr "已評論"
 
 msgid "Comments"
 msgstr "評論"
+
+msgid "Comments could not be loaded"
+msgstr "無法載入留言"
 
 msgid "Comments go to this agent"
 msgstr "評論將傳送給此代理程式"
@@ -7209,6 +7222,9 @@ msgstr "隱藏拉取請求預覽"
 
 msgid "Hide resolved ({resolvedCount})"
 msgstr "隱藏已解決 ({resolvedCount})"
+
+msgid "Hide resolved comments"
+msgstr "隱藏已解決的留言"
 
 msgid "Hide review comments"
 msgstr "隱藏審查評論"
@@ -12055,6 +12071,9 @@ msgstr "回覆"
 msgid "Reply to thread…"
 msgstr "回覆討論串…"
 
+msgid "Replying to {replyingTo}"
+msgstr "正在回覆 {replyingTo}"
+
 msgid "repo"
 msgstr "儲存庫"
 
@@ -14535,9 +14554,6 @@ msgstr "聯絡Superset"
 msgid "Tap anything on the page to comment on it"
 msgstr "點按頁面上的任何元素即可留言"
 
-msgid "Tap the focus button to comment on a block."
-msgstr "點按聚焦按鈕即可留言某個區塊。"
-
 msgid "Target agent"
 msgstr "目標代理程式"
 
@@ -15144,9 +15160,6 @@ msgstr "這將關閉所選工作區及其終端機。專案的檔案和分支保
 
 msgid "This closes the workspace and its terminals. The project's files, branches and other workspaces stay as they are."
 msgstr "這將關閉該工作區及其終端機。專案的檔案、分支和其他工作區保持不變。"
-
-msgid "This comment is no longer here"
-msgstr "此留言已不存在"
 
 msgid "This deletes the saved scrollback used for reboot/crash recovery."
 msgstr "這將刪除用於重啟/崩潰恢復的已儲存回滾緩衝。"
@@ -16672,6 +16685,9 @@ msgstr "工作區已建立"
 
 msgid "Workspace created from PR"
 msgstr "已從PR建立工作區"
+
+msgid "Workspace details"
+msgstr "工作區詳細資料"
 
 msgid "Workspace ID copied"
 msgstr "已複製工作區ID"

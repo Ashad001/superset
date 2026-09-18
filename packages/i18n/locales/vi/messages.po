@@ -274,6 +274,10 @@ msgstr "{0, plural, one {Hiện thêm # dòng} other {Hiện thêm # dòng}}"
 msgid "{0, plural, one {This will import # existing worktree into Superset as workspaces. Each worktree on disk will be tracked and appear in your sidebar. No files will be modified.} other {This will import # existing worktrees into Superset as workspaces. Each worktree on disk will be tracked and appear in your sidebar. No files will be modified.}}"
 msgstr "{0, plural, one {Thao tác này sẽ nhập # worktree có sẵn vào Superset thành workspace. Mỗi worktree trên đĩa sẽ được theo dõi và xuất hiện trong thanh bên. Không tệp nào bị thay đổi.} other {Thao tác này sẽ nhập # worktree có sẵn vào Superset thành workspace. Mỗi worktree trên đĩa sẽ được theo dõi và xuất hiện trong thanh bên. Không tệp nào bị thay đổi.}}"
 
+#. placeholder {0}: resolved.length
+msgid "{0, plural, one {View # resolved comment} other {View # resolved comments}}"
+msgstr "{0, plural, other {Xem # bình luận đã giải quyết}}"
+
 #. placeholder {0}: mine.length
 msgid "{0, plural, one {Watching # page for comments} other {Watching # pages for comments}}"
 msgstr "{0, plural, one {Đang theo dõi # trang để nhận bình luận} other {Đang theo dõi # trang để nhận bình luận}}"
@@ -1406,6 +1410,9 @@ msgstr "Thêm"
 #. placeholder {0}: AGENT_LABELS[agent]
 msgid "Add {0} account"
 msgstr "Thêm tài khoản {0}"
+
+msgid "Add a comment…"
+msgstr "Thêm bình luận…"
 
 msgid "Add a lifecycle run script in Project Settings or mark a terminal script as the workspace run."
 msgstr "Hãy thêm một script chạy vòng đời trong Cài đặt dự án hoặc đánh dấu một script terminal làm lệnh chạy của workspace."
@@ -2862,6 +2869,9 @@ msgstr "Hủy chỉnh sửa"
 msgid "Cancel plan"
 msgstr "Hủy gói"
 
+msgid "Cancel reply"
+msgstr "Hủy trả lời"
+
 msgid "Canceled"
 msgstr "Đã hủy"
 
@@ -3597,6 +3607,9 @@ msgstr "Đã bình luận"
 
 msgid "Comments"
 msgstr "Bình luận"
+
+msgid "Comments could not be loaded"
+msgstr "Không thể tải bình luận"
 
 msgid "Comments go to this agent"
 msgstr "Bình luận sẽ được gửi tới agent này"
@@ -7209,6 +7222,9 @@ msgstr "Ẩn xem trước pull request"
 
 msgid "Hide resolved ({resolvedCount})"
 msgstr "Ẩn các mục đã xử lý ({resolvedCount})"
+
+msgid "Hide resolved comments"
+msgstr "Ẩn bình luận đã giải quyết"
 
 msgid "Hide review comments"
 msgstr "Ẩn bình luận review"
@@ -12055,6 +12071,9 @@ msgstr "Trả lời"
 msgid "Reply to thread…"
 msgstr "Trả lời luồng…"
 
+msgid "Replying to {replyingTo}"
+msgstr "Đang trả lời {replyingTo}"
+
 msgid "repo"
 msgstr "repo"
 
@@ -14535,9 +14554,6 @@ msgstr "Trò chuyện với Superset"
 msgid "Tap anything on the page to comment on it"
 msgstr "Chạm vào bất kỳ đâu trên trang để bình luận"
 
-msgid "Tap the focus button to comment on a block."
-msgstr "Chạm nút lấy nét để bình luận về một khối."
-
 msgid "Target agent"
 msgstr "Agent đích"
 
@@ -15144,9 +15160,6 @@ msgstr "Thao tác này đóng các workspace đã chọn và terminal của chú
 
 msgid "This closes the workspace and its terminals. The project's files, branches and other workspaces stay as they are."
 msgstr "Thao tác này đóng workspace và các terminal của nó. Tệp, nhánh và các workspace khác của dự án vẫn giữ nguyên."
-
-msgid "This comment is no longer here"
-msgstr "Bình luận này không còn ở đây"
 
 msgid "This deletes the saved scrollback used for reboot/crash recovery."
 msgstr "Thao tác này xóa phần scrollback đã lưu dùng để khôi phục sau khi khởi động lại hoặc crash."
@@ -16672,6 +16685,9 @@ msgstr "Đã tạo workspace"
 
 msgid "Workspace created from PR"
 msgstr "Đã tạo workspace từ PR"
+
+msgid "Workspace details"
+msgstr "Chi tiết workspace"
 
 msgid "Workspace ID copied"
 msgstr "Đã sao chép ID workspace"

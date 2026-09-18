@@ -274,6 +274,10 @@ msgstr "{0, plural, one {Показать ещё # строку} few {Показ
 msgid "{0, plural, one {This will import # existing worktree into Superset as workspaces. Each worktree on disk will be tracked and appear in your sidebar. No files will be modified.} other {This will import # existing worktrees into Superset as workspaces. Each worktree on disk will be tracked and appear in your sidebar. No files will be modified.}}"
 msgstr "{0, plural, one {# существующий worktree будет импортирован в Superset как рабочая область. Каждый worktree на диске будет отслеживаться и появится в боковой панели. Файлы не изменяются.} few {# существующих worktree будут импортированы в Superset как рабочие области. Каждый worktree на диске будет отслеживаться и появится в боковой панели. Файлы не изменяются.} many {# существующих worktree будут импортированы в Superset как рабочие области. Каждый worktree на диске будет отслеживаться и появится в боковой панели. Файлы не изменяются.} other {# существующих worktree будут импортированы в Superset как рабочие области. Каждый worktree на диске будет отслеживаться и появится в боковой панели. Файлы не изменяются.}}"
 
+#. placeholder {0}: resolved.length
+msgid "{0, plural, one {View # resolved comment} other {View # resolved comments}}"
+msgstr "{0, plural, one {Показать # решённый комментарий} few {Показать # решённых комментария} many {Показать # решённых комментариев} other {Показать # решённых комментариев}}"
+
 #. placeholder {0}: mine.length
 msgid "{0, plural, one {Watching # page for comments} other {Watching # pages for comments}}"
 msgstr "{0, plural, one {Следит за комментариями на # странице} few {Следит за комментариями на # страницах} many {Следит за комментариями на # страницах} other {Следит за комментариями на # страницах}}"
@@ -1406,6 +1410,9 @@ msgstr "Добавить"
 #. placeholder {0}: AGENT_LABELS[agent]
 msgid "Add {0} account"
 msgstr "Добавить аккаунт {0}"
+
+msgid "Add a comment…"
+msgstr "Добавьте комментарий…"
 
 msgid "Add a lifecycle run script in Project Settings or mark a terminal script as the workspace run."
 msgstr "Добавьте скрипт запуска в настройках проекта или отметьте скрипт терминала как запуск рабочей области."
@@ -2862,6 +2869,9 @@ msgstr "Отменить правки"
 msgid "Cancel plan"
 msgstr "Отменить тариф"
 
+msgid "Cancel reply"
+msgstr "Отменить ответ"
+
 msgid "Canceled"
 msgstr "Отменена"
 
@@ -3597,6 +3607,9 @@ msgstr "Прокомментировано"
 
 msgid "Comments"
 msgstr "Комментарии"
+
+msgid "Comments could not be loaded"
+msgstr "Не удалось загрузить комментарии"
 
 msgid "Comments go to this agent"
 msgstr "Комментарии отправляются этому агенту"
@@ -7209,6 +7222,9 @@ msgstr "Скрыть предпросмотр пул-реквеста"
 
 msgid "Hide resolved ({resolvedCount})"
 msgstr "Скрыть закрытые ({resolvedCount})"
+
+msgid "Hide resolved comments"
+msgstr "Скрыть решённые комментарии"
 
 msgid "Hide review comments"
 msgstr "Скрыть комментарии ревью"
@@ -12055,6 +12071,9 @@ msgstr "Ответить"
 msgid "Reply to thread…"
 msgstr "Ответить в ветке…"
 
+msgid "Replying to {replyingTo}"
+msgstr "Ответ для {replyingTo}"
+
 msgid "repo"
 msgstr "репозиторий"
 
@@ -14535,9 +14554,6 @@ msgstr "Напишите в Superset"
 msgid "Tap anything on the page to comment on it"
 msgstr "Коснитесь любого элемента страницы, чтобы прокомментировать его"
 
-msgid "Tap the focus button to comment on a block."
-msgstr "Нажмите кнопку фокуса, чтобы прокомментировать блок."
-
 msgid "Target agent"
 msgstr "Целевой агент"
 
@@ -15144,9 +15160,6 @@ msgstr "Выбранные рабочие области и их термина�
 
 msgid "This closes the workspace and its terminals. The project's files, branches and other workspaces stay as they are."
 msgstr "Рабочая область и её терминалы будут закрыты. Файлы, ветки и другие рабочие области проекта останутся без изменений."
-
-msgid "This comment is no longer here"
-msgstr "Этого комментария больше нет"
 
 msgid "This deletes the saved scrollback used for reboot/crash recovery."
 msgstr "Это удалит сохранённую прокрутку, используемую для восстановления после перезагрузки или сбоя."
@@ -16672,6 +16685,9 @@ msgstr "Рабочая область создана"
 
 msgid "Workspace created from PR"
 msgstr "Рабочая область создана из PR"
+
+msgid "Workspace details"
+msgstr "Сведения о рабочей области"
 
 msgid "Workspace ID copied"
 msgstr "ID рабочей области скопирован"

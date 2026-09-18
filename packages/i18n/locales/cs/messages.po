@@ -274,6 +274,10 @@ msgstr "{0, plural, one {Zobrazit ještě # řádek} few {Zobrazit ještě # ř�
 msgid "{0, plural, one {This will import # existing worktree into Superset as workspaces. Each worktree on disk will be tracked and appear in your sidebar. No files will be modified.} other {This will import # existing worktrees into Superset as workspaces. Each worktree on disk will be tracked and appear in your sidebar. No files will be modified.}}"
 msgstr "{0, plural, one {Tímto se do Superset naimportuje # existující worktree jako pracovní prostor. Každý worktree na disku bude sledován a objeví se v postranním panelu. Žádné soubory se nezmění.} few {Tímto se do Superset naimportují # existující worktree jako pracovní prostory. Každý worktree na disku bude sledován a objeví se v postranním panelu. Žádné soubory se nezmění.} many {Tímto se do Superset naimportuje # existujícího worktree jako pracovní prostory. Každý worktree na disku bude sledován a objeví se v postranním panelu. Žádné soubory se nezmění.} other {Tímto se do Superset naimportuje # existujících worktree jako pracovní prostory. Každý worktree na disku bude sledován a objeví se v postranním panelu. Žádné soubory se nezmění.}}"
 
+#. placeholder {0}: resolved.length
+msgid "{0, plural, one {View # resolved comment} other {View # resolved comments}}"
+msgstr "{0, plural, one {Zobrazit # vyřešený komentář} few {Zobrazit # vyřešené komentáře} many {Zobrazit # vyřešeného komentáře} other {Zobrazit # vyřešených komentářů}}"
+
 #. placeholder {0}: mine.length
 msgid "{0, plural, one {Watching # page for comments} other {Watching # pages for comments}}"
 msgstr "{0, plural, one {Sleduje # stránku kvůli komentářům} few {Sleduje # stránky kvůli komentářům} many {Sleduje # stránky kvůli komentářům} other {Sleduje # stránek kvůli komentářům}}"
@@ -1406,6 +1410,9 @@ msgstr "Přidat"
 #. placeholder {0}: AGENT_LABELS[agent]
 msgid "Add {0} account"
 msgstr "Přidat účet {0}"
+
+msgid "Add a comment…"
+msgstr "Přidat komentář…"
 
 msgid "Add a lifecycle run script in Project Settings or mark a terminal script as the workspace run."
 msgstr "Přidejte lifecycle run skript v nastavení projektu, nebo označte terminálový skript jako spuštění pracovního prostoru."
@@ -2862,6 +2869,9 @@ msgstr "Zrušit úpravy"
 msgid "Cancel plan"
 msgstr "Zrušit tarif"
 
+msgid "Cancel reply"
+msgstr "Zrušit odpověď"
+
 msgid "Canceled"
 msgstr "Zrušeno"
 
@@ -3597,6 +3607,9 @@ msgstr "Okomentováno"
 
 msgid "Comments"
 msgstr "Komentáře"
+
+msgid "Comments could not be loaded"
+msgstr "Komentáře se nepodařilo načíst"
 
 msgid "Comments go to this agent"
 msgstr "Komentáře jdou tomuto agentovi"
@@ -7209,6 +7222,9 @@ msgstr "Skrýt náhled pull requestu"
 
 msgid "Hide resolved ({resolvedCount})"
 msgstr "Skrýt vyřešené ({resolvedCount})"
+
+msgid "Hide resolved comments"
+msgstr "Skrýt vyřešené komentáře"
 
 msgid "Hide review comments"
 msgstr "Skrýt komentáře z revize"
@@ -12055,6 +12071,9 @@ msgstr "Odpovědět"
 msgid "Reply to thread…"
 msgstr "Odpovědět do vlákna…"
 
+msgid "Replying to {replyingTo}"
+msgstr "Odpověď pro {replyingTo}"
+
 msgid "repo"
 msgstr "repo"
 
@@ -14535,9 +14554,6 @@ msgstr "Napište nám"
 msgid "Tap anything on the page to comment on it"
 msgstr "Klepnutím na cokoli na stránce to okomentuješ"
 
-msgid "Tap the focus button to comment on a block."
-msgstr "Klepnutím na tlačítko zaměření okomentuješ blok."
-
 msgid "Target agent"
 msgstr "Cílový agent"
 
@@ -15144,9 +15160,6 @@ msgstr "Tím se zavřou vybrané pracovní prostory a jejich terminály. Soubory
 
 msgid "This closes the workspace and its terminals. The project's files, branches and other workspaces stay as they are."
 msgstr "Tím se zavře pracovní prostor a jeho terminály. Soubory, větve a ostatní pracovní prostory projektu zůstanou beze změny."
-
-msgid "This comment is no longer here"
-msgstr "Tento komentář už tu není"
 
 msgid "This deletes the saved scrollback used for reboot/crash recovery."
 msgstr "Tímto se smaže uložený scrollback používaný k obnovení po restartu nebo pádu."
@@ -16672,6 +16685,9 @@ msgstr "Pracovní prostor vytvořen"
 
 msgid "Workspace created from PR"
 msgstr "Pracovní prostor vytvořen z PR"
+
+msgid "Workspace details"
+msgstr "Podrobnosti pracovního prostoru"
 
 msgid "Workspace ID copied"
 msgstr "ID pracovního prostoru zkopírováno"
