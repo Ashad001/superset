@@ -6130,6 +6130,9 @@ msgstr "Aufgabe konnte nicht erstellt werden"
 msgid "Failed to create team"
 msgstr "Team konnte nicht erstellt werden"
 
+msgid "Failed to create terminal"
+msgstr "Terminal konnte nicht erstellt werden"
+
 msgid "Failed to create thread"
 msgstr "Thread konnte nicht erstellt werden"
 
@@ -9167,6 +9170,9 @@ msgstr "Neue Releases und Produkt-Updates."
 
 msgid "New session"
 msgstr "Neue Sitzung"
+
+msgid "New shell"
+msgstr "Neue Shell"
 
 msgid "New stars"
 msgstr "Neue Stars"
@@ -13228,6 +13234,9 @@ msgstr "Das Erstellen von Sitzungen im Web kommt bald"
 
 msgid "Session details"
 msgstr "Sitzungsdetails"
+
+msgid "Session ended"
+msgstr "Sitzung beendet"
 
 msgid "Session name"
 msgstr "Sitzungsname"

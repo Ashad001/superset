@@ -6130,6 +6130,9 @@ msgstr "建立任務失敗"
 msgid "Failed to create team"
 msgstr "建立團隊失敗"
 
+msgid "Failed to create terminal"
+msgstr "無法建立終端機"
+
 msgid "Failed to create thread"
 msgstr "建立討論串失敗"
 
@@ -9167,6 +9170,9 @@ msgstr "新版本與產品更新。"
 
 msgid "New session"
 msgstr "新建會話"
+
+msgid "New shell"
+msgstr "新增 Shell"
 
 msgid "New stars"
 msgstr "新增星標"
@@ -13228,6 +13234,9 @@ msgstr "網頁端建立會話即將推出"
 
 msgid "Session details"
 msgstr "會話詳情"
+
+msgid "Session ended"
+msgstr "工作階段已結束"
 
 msgid "Session name"
 msgstr "會話名稱"

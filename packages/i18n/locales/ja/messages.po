@@ -6130,6 +6130,9 @@ msgstr "タスクの作成に失敗しました"
 msgid "Failed to create team"
 msgstr "チームの作成に失敗しました"
 
+msgid "Failed to create terminal"
+msgstr "ターミナルを作成できませんでした"
+
 msgid "Failed to create thread"
 msgstr "スレッドの作成に失敗しました"
 
@@ -9167,6 +9170,9 @@ msgstr "新しいリリースと製品アップデート。"
 
 msgid "New session"
 msgstr "新規セッション"
+
+msgid "New shell"
+msgstr "新しいシェル"
 
 msgid "New stars"
 msgstr "新規スター"
@@ -13228,6 +13234,9 @@ msgstr "Web版でのセッション作成は近日公開"
 
 msgid "Session details"
 msgstr "セッションの詳細"
+
+msgid "Session ended"
+msgstr "セッション終了"
 
 msgid "Session name"
 msgstr "セッション名"

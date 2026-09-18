@@ -6130,6 +6130,9 @@ msgstr "Aanmaken van taak mislukt"
 msgid "Failed to create team"
 msgstr "Aanmaken van team mislukt"
 
+msgid "Failed to create terminal"
+msgstr "Terminal maken mislukt"
+
 msgid "Failed to create thread"
 msgstr "Aanmaken van thread mislukt"
 
@@ -9167,6 +9170,9 @@ msgstr "Nieuwe releases en productupdates."
 
 msgid "New session"
 msgstr "Nieuwe sessie"
+
+msgid "New shell"
+msgstr "Nieuwe shell"
 
 msgid "New stars"
 msgstr "Nieuwe sterren"
@@ -13228,6 +13234,9 @@ msgstr "Sessies aanmaken op het web komt binnenkort"
 
 msgid "Session details"
 msgstr "Sessiedetails"
+
+msgid "Session ended"
+msgstr "Sessie beëindigd"
 
 msgid "Session name"
 msgstr "Sessienaam"
