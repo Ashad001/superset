@@ -28,7 +28,7 @@ export interface TerminalLinkActionDeps {
 }
 
 export function runUrlLinkAction(
-	deps: TerminalLinkActionDeps,
+	deps: Pick<TerminalLinkActionDeps, "store" | "isPagesEnabled">,
 	url: string,
 	action: LinkAction,
 ): void {
