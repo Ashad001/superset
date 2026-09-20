@@ -1050,9 +1050,6 @@ msgstr "<0>{primaryFont}</0> bu sistemde kurulu değil. Sıradaki kullanılabili
 msgid "<0>#{0}</0> <1>of {1} on the leaderboard</1>"
 msgstr "<0>#{0}</0> <1>— liderlik tablosundaki {1} kişi arasında</1>"
 
-msgid "<0>Coming soon to</0><1>App Store</1>"
-msgstr "<1>App Store</1><0>'da yakında</0>"
-
 msgid "<0>Coming soon to</0><1>Google Play</1>"
 msgstr "<1>Google Play</1><0>'de yakında</0>"
 
@@ -8897,9 +8894,6 @@ msgstr "Zorunlu girdi {input} eksik"
 msgid "Mobile"
 msgstr "Mobil"
 
-msgid "Mobile (coming soon)"
-msgstr "Mobil (yakında)"
-
 msgid "Mobile app"
 msgstr "Mobil uygulama"
 
@@ -10632,9 +10626,6 @@ msgstr "Mevcut çalışma alanı açıldı"
 
 msgid "opened PR #841 for review"
 msgstr "inceleme için PR #841 açtı"
-
-msgid "Opening TestFlight…"
-msgstr "TestFlight açılıyor…"
 
 msgid "Opening worktree..."
 msgstr "Worktree açılıyor..."
@@ -14413,9 +14404,6 @@ msgstr "Superset Enterprise, takımlar için Superset'tir. Nelerin dahil olduğu
 msgid "Superset for iPhone"
 msgstr "iPhone için Superset"
 
-msgid "Superset for iPhone is on the way. Be first to know when it ships."
-msgstr "iPhone için Superset yolda. Çıktığında ilk siz haberdar olun."
-
 msgid "Superset for your team"
 msgstr "Takımınız için Superset"
 
@@ -14469,6 +14457,9 @@ msgstr "Superset belleği"
 
 msgid "Superset memory · last 5 min"
 msgstr "Superset belleği · son 5 dk"
+
+msgid "Superset Mobile is here. Learn more"
+msgstr "Mobil Superset burada. Daha fazla bilgi"
 
 msgid "Superset Mobile is part of Pro"
 msgstr "Superset Mobile, Pro'nun bir parçasıdır"

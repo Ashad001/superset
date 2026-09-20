@@ -1050,9 +1050,6 @@ msgstr "<0>{primaryFont}</0> není v tomto systému nainstalovaný. Použije se 
 msgid "<0>#{0}</0> <1>of {1} on the leaderboard</1>"
 msgstr "<0>#{0}</0> <1>z {1} v žebříčku</1>"
 
-msgid "<0>Coming soon to</0><1>App Store</1>"
-msgstr "<0>Již brzy v</0><1>App Store</1>"
-
 msgid "<0>Coming soon to</0><1>Google Play</1>"
 msgstr "<0>Již brzy na</0><1>Google Play</1>"
 
@@ -8897,9 +8894,6 @@ msgstr "Chybí povinný vstup {input}"
 msgid "Mobile"
 msgstr "Mobil"
 
-msgid "Mobile (coming soon)"
-msgstr "Mobil (již brzy)"
-
 msgid "Mobile app"
 msgstr "Mobilní aplikace"
 
@@ -10632,9 +10626,6 @@ msgstr "Otevřen existující pracovní prostor"
 
 msgid "opened PR #841 for review"
 msgstr "otevřel PR #841 k revizi"
-
-msgid "Opening TestFlight…"
-msgstr "Otevírám TestFlight…"
 
 msgid "Opening worktree..."
 msgstr "Otevírám worktree..."
@@ -14413,9 +14404,6 @@ msgstr "Superset Enterprise je Superset pro týmy. Ozvěte se a řekneme vám, c
 msgid "Superset for iPhone"
 msgstr "Superset pro iPhone"
 
-msgid "Superset for iPhone is on the way. Be first to know when it ships."
-msgstr "Superset pro iPhone je na cestě. Dozvíte se jako první, až vyjde."
-
 msgid "Superset for your team"
 msgstr "Superset pro váš tým"
 
@@ -14469,6 +14457,9 @@ msgstr "Paměť Superset"
 
 msgid "Superset memory · last 5 min"
 msgstr "Paměť Superset · posledních 5 min"
+
+msgid "Superset Mobile is here. Learn more"
+msgstr "Mobilní Superset je tady. Zjistit více"
 
 msgid "Superset Mobile is part of Pro"
 msgstr "Superset Mobile je součástí tarifu Pro"
