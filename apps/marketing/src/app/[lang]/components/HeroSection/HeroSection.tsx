@@ -3,8 +3,8 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { COMPANY } from "@superset/shared/constants";
 import Link from "next/link";
-import { useState } from "react";
-import { FaGithub, FaMobileAlt } from "react-icons/fa";
+import { useEffect, useState } from "react";
+import { FaApple, FaGithub, FaMobileAlt } from "react-icons/fa";
 import { DownloadButton } from "../DownloadButton";
 import { WaitlistModal } from "../WaitlistModal";
 import { BoidsBackground } from "./components/BoidsBackground";
@@ -14,6 +14,15 @@ import { TypewriterText } from "./components/TypewriterText";
 
 export function HeroSection() {
 	const [isWaitlistOpen, setIsWaitlistOpen] = useState(false);
+	const [isIOS, setIsIOS] = useState(false);
+
+	useEffect(() => {
+		setIsIOS(
+			/iphone|ipad|ipod/i.test(navigator.userAgent) ||
+				(/macintosh/i.test(navigator.userAgent) &&
+					navigator.maxTouchPoints > 1),
+		);
+	}, []);
 	const { t, i18n } = useLingui();
 
 	const headlineSegments = [
@@ -108,16 +117,28 @@ export function HeroSection() {
 								source="hero"
 								onJoinWaitlist={() => setIsWaitlistOpen(true)}
 							/>
+							<Link
+								href={
+									isIOS
+										? COMPANY.APP_STORE_URL
+										: i18n.locale === "en"
+											? "/mobile"
+											: `/${i18n.locale}/mobile`
+								}
+								aria-label={t({ message: "Superset for iPhone" })}
+								className="flex size-11 shrink-0 items-center justify-center border border-border bg-background text-foreground transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand sm:size-12"
+							>
+								<FaApple aria-hidden="true" className="size-5" />
+							</Link>
 							<button
 								type="button"
-								className="px-4 py-2.5 sm:px-6 sm:py-3 text-sm sm:text-base font-normal bg-background border border-border text-foreground hover:bg-muted transition-colors flex items-center gap-2"
+								className="flex size-11 shrink-0 items-center justify-center border border-border bg-background text-foreground transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand sm:size-12"
 								onClick={() => window.open(COMPANY.GITHUB_URL, "_blank")}
 								aria-label={t({
 									message: "View on GitHub",
 								})}
 							>
-								<Trans>View on GitHub</Trans>
-								<FaGithub className="size-4" />
+								<FaGithub aria-hidden="true" className="size-5" />
 							</button>
 						</div>
 						<HeroReassurance />
