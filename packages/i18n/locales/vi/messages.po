@@ -6904,8 +6904,8 @@ msgstr "Free"
 msgid "Free for everyone"
 msgstr "Miễn phí cho tất cả"
 
-msgid "Free plan available · No credit card required"
-msgstr "Có gói miễn phí · Không cần thẻ tín dụng"
+msgid "Free to start · No credit card required"
+msgstr "Bắt đầu miễn phí · Không cần thẻ tín dụng"
 
 msgid "Frequently<0/>asked questions"
 msgstr "Câu hỏi<0/>thường gặp"
@@ -14476,8 +14476,8 @@ msgstr "Bộ nhớ của Superset · 5 phút gần nhất"
 msgid "Superset mobile gives me the power of my desktop anywhere I go."
 msgstr "Superset mobile mang sức mạnh của máy tính để bàn đến bất cứ đâu tôi đi."
 
-msgid "Superset Mobile is here. Learn more"
-msgstr "Superset dành cho di động đã ra mắt. Tìm hiểu thêm"
+msgid "Superset Mobile is here"
+msgstr "Superset Mobile đã ra mắt"
 
 msgid "Superset Mobile is part of Pro"
 msgstr "Superset Mobile thuộc gói Pro"

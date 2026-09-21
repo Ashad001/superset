@@ -6904,8 +6904,8 @@ msgstr "Free"
 msgid "Free for everyone"
 msgstr "Zdarma pro všechny"
 
-msgid "Free plan available · No credit card required"
-msgstr "K dispozici je bezplatný tarif · Bez platební karty"
+msgid "Free to start · No credit card required"
+msgstr "Začněte zdarma · Kreditní karta není potřeba"
 
 msgid "Frequently<0/>asked questions"
 msgstr "Často<0/>kladené otázky"
@@ -14476,8 +14476,8 @@ msgstr "Paměť Superset · posledních 5 min"
 msgid "Superset mobile gives me the power of my desktop anywhere I go."
 msgstr "Superset mobile mi dává výkon mého počítače, ať jsem kdekoli."
 
-msgid "Superset Mobile is here. Learn more"
-msgstr "Mobilní Superset je tady. Zjistit více"
+msgid "Superset Mobile is here"
+msgstr "Superset Mobile je tady"
 
 msgid "Superset Mobile is part of Pro"
 msgstr "Superset Mobile je součástí tarifu Pro"
