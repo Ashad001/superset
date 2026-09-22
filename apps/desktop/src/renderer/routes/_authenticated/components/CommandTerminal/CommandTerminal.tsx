@@ -1,29 +1,30 @@
 import "@xterm/xterm/css/xterm.css";
+import { errorMessage } from "@superset/i18n/errors";
+import { toast } from "@superset/ui/sonner";
 import { useEffect, useRef } from "react";
+import { useTerminalAppearance } from "renderer/hooks/useTerminalAppearance";
 import {
 	attachToContainer,
 	createRuntime,
 	disposeRuntime,
 } from "renderer/lib/terminal/terminal-runtime";
 import { electronTrpcClient } from "renderer/lib/trpc-client";
-import { useTerminalAppearance } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/hooks/usePaneRegistry/components/TerminalPane/hooks/useTerminalAppearance";
+import { installCommandTerminalLinks } from "./utils/installCommandTerminalLinks";
 
-interface GhAuthTerminalProps {
+interface CommandTerminalProps {
 	command: string;
-	/** Fired when the gh process exits (success or failure). */
-	onExit: () => void;
-	/** Fired with each chunk of raw terminal output. */
+	onExit: (exitCode: number | null) => void;
 	onOutput?: (data: string) => void;
 	/** Receives a writer for sending input to the pty (queued until it exists). */
 	onWriterReady?: (write: (data: string) => void) => void;
 }
 
-export function GhAuthTerminal({
+export function CommandTerminal({
 	command,
 	onExit,
 	onOutput,
 	onWriterReady,
-}: GhAuthTerminalProps) {
+}: CommandTerminalProps) {
 	const appearance = useTerminalAppearance();
 	const appearanceRef = useRef(appearance);
 	appearanceRef.current = appearance;
@@ -41,8 +42,18 @@ export function GhAuthTerminal({
 		const container = containerRef.current;
 		if (!container) return;
 
-		const paneId = `onboarding-gh-auth-${crypto.randomUUID()}`;
+		const paneId = `command-terminal-${crypto.randomUUID()}`;
 		const runtime = createRuntime(paneId, appearanceRef.current);
+		const disposeLinks = installCommandTerminalLinks(
+			runtime.terminal,
+			(url) => {
+				void electronTrpcClient.external.openUrl
+					.mutate(url)
+					.catch((error: unknown) => {
+						toast.error(errorMessage(error));
+					});
+			},
+		);
 		const syncSize = () => {
 			void electronTrpcClient.terminal.resize.mutate({
 				paneId,
@@ -68,17 +79,19 @@ export function GhAuthTerminal({
 		// Queue input until the pane exists: xterm auto-replies to terminal
 		// queries (OSC 11, DSR) at mount, and a write to a not-yet-created pane
 		// makes the terminal service synthesize an exit event for it.
+		let disposed = false;
 		let paneReady = false;
 		let exited = false;
-		let exitBeforeReady = false;
+		let exitBeforeReady: number | null = null;
 		const pendingInput: string[] = [];
-		const fireExit = () => {
-			if (exited) return;
+		const fireExit = (exitCode: number | null) => {
+			if (disposed || exited) return;
 			exited = true;
-			onExitRef.current();
+			onExitRef.current(exitCode);
 		};
 
 		const writeToPty = (data: string) => {
+			if (disposed || exited) return;
 			if (!paneReady) {
 				pendingInput.push(data);
 				return;
@@ -94,8 +107,9 @@ export function GhAuthTerminal({
 					runtime.terminal.write(event.data);
 					onOutputRef.current?.(event.data);
 				} else if (event.type === "exit") {
-					if (paneReady) fireExit();
-					else exitBeforeReady = true;
+					const exitCode = event.signal ? 128 + event.signal : event.exitCode;
+					if (paneReady) fireExit(exitCode);
+					else exitBeforeReady = exitCode;
 				}
 			},
 		});
@@ -111,19 +125,25 @@ export function GhAuthTerminal({
 				skipColdRestore: true,
 			})
 			.then(() => {
+				if (disposed) {
+					void electronTrpcClient.terminal.kill.mutate({ paneId });
+					return;
+				}
 				paneReady = true;
 				for (const data of pendingInput.splice(0)) {
 					void electronTrpcClient.terminal.write.mutate({ paneId, data });
 				}
-				if (exitBeforeReady) fireExit();
+				if (exitBeforeReady !== null) fireExit(exitBeforeReady);
 			})
 			// A failed create would otherwise leave the dialog running forever
 			// with a dead terminal silently swallowing queued input.
-			.catch(() => fireExit());
+			.catch(() => fireExit(null));
 
 		return () => {
+			disposed = true;
 			for (const timer of refitTimers) window.clearTimeout(timer);
 			inputDisposable.dispose();
+			disposeLinks();
 			subscription.unsubscribe();
 			void electronTrpcClient.terminal.kill.mutate({ paneId });
 			disposeRuntime(runtime);
