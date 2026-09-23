@@ -6631,6 +6631,9 @@ msgstr "Nach Reviews filtern"
 msgid "Filter by state"
 msgstr "Nach Status filtern"
 
+msgid "Filter by workspace: {label}"
+msgstr "Nach Arbeitsbereich filtern: {label}"
+
 msgid "Filter hosts"
 msgstr "Hosts filtern"
 
@@ -16049,6 +16052,9 @@ msgstr "Unbekannte Variablen: {unknownVariables}"
 
 msgid "Unknown Welder"
 msgstr "Unbekannter Schweißer"
+
+msgid "Unknown workspace"
+msgstr "Unbekannter Arbeitsbereich"
 
 msgid "Unlimited"
 msgstr "Unbegrenzt"

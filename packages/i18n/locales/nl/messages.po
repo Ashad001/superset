@@ -6631,6 +6631,9 @@ msgstr "Filteren op reviews"
 msgid "Filter by state"
 msgstr "Filteren op status"
 
+msgid "Filter by workspace: {label}"
+msgstr "Filteren op werkruimte: {label}"
+
 msgid "Filter hosts"
 msgstr "Hosts filteren"
 
@@ -16049,6 +16052,9 @@ msgstr "Onbekende variabelen: {unknownVariables}"
 
 msgid "Unknown Welder"
 msgstr "Onbekende Lasser"
+
+msgid "Unknown workspace"
+msgstr "Onbekende werkruimte"
 
 msgid "Unlimited"
 msgstr "Onbeperkt"

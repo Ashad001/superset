@@ -6631,6 +6631,9 @@ msgstr "Filtra per revisioni"
 msgid "Filter by state"
 msgstr "Filtra per stato"
 
+msgid "Filter by workspace: {label}"
+msgstr "Filtra per workspace: {label}"
+
 msgid "Filter hosts"
 msgstr "Filtra gli host"
 
@@ -16049,6 +16052,9 @@ msgstr "Variabili sconosciute: {unknownVariables}"
 
 msgid "Unknown Welder"
 msgstr "Saldatore Sconosciuto"
+
+msgid "Unknown workspace"
+msgstr "Workspace sconosciuto"
 
 msgid "Unlimited"
 msgstr "Illimitati"
