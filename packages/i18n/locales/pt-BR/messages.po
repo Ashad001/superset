@@ -5931,8 +5931,8 @@ msgstr "Tudo é scriptável. Crie áreas de trabalho e agentes pela CLI, integre
 msgid "Everything we built on top of the primitives — Superset originals, the"
 msgstr "Tudo o que construímos em cima dos primitivos — os originais do Superset, a suíte"
 
-msgid "Everything you've published is deleted, not hidden. You can rejoin later and it will rebuild from the transcripts still on this machine — only your past ranking is lost."
-msgstr "Tudo o que você publicou é apagado, não ocultado. Você pode voltar depois e o histórico é reconstruído a partir das transcrições que ainda estiverem nesta máquina — só a sua posição anterior se perde."
+msgid "Everything you've published is deleted, not hidden. You can rejoin later and it will rebuild from the transcripts still on this machine."
+msgstr "Tudo o que você publicou é apagado, não ocultado. Você pode voltar depois e o histórico é reconstruído a partir das transcrições que ainda estiverem nesta máquina."
 
 msgid "Existing repo path"
 msgstr "Caminho do repositório existente"

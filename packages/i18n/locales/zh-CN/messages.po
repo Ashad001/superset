@@ -5931,8 +5931,8 @@ msgstr "一切都能脚本化。用CLI创建工作区和智能体，用SDK把Sup
 msgid "Everything we built on top of the primitives — Superset originals, the"
 msgstr "我们在基础组件之上构建的一切——Superset原创组件、面向智能体界面的"
 
-msgid "Everything you've published is deleted, not hidden. You can rejoin later and it will rebuild from the transcripts still on this machine — only your past ranking is lost."
-msgstr "你发布过的所有内容都会被删除，而不是隐藏。你之后可以重新加入，届时会根据此机器上仍保留的记录重新生成，只有过往排名会丢失。"
+msgid "Everything you've published is deleted, not hidden. You can rejoin later and it will rebuild from the transcripts still on this machine."
+msgstr "你发布过的所有内容都会被删除，而不是隐藏。你之后可以重新加入，届时会根据此机器上仍保留的记录重新生成。"
 
 msgid "Existing repo path"
 msgstr "已有仓库路径"
