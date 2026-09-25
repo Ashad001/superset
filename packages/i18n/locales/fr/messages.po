@@ -3483,6 +3483,9 @@ msgstr "Les bacs à sable cloud ne sont pas activés pour {account}. Demandez l'
 msgid "Cloud workspace"
 msgstr "Espace de travail cloud"
 
+msgid "Cloud workspaces ignore this variable. Agents sign in under Settings › Agents instead."
+msgstr "Les espaces de travail cloud ignorent cette variable. Les agents se connectent plutôt dans Paramètres › Agents."
+
 msgid "Co-founder & CTO, TrainLoop (YC W25)"
 msgstr "Cofondateur et CTO, TrainLoop (YC W25)"
 

@@ -3483,6 +3483,9 @@ msgstr "Sandbox trên cloud chưa được bật cho {account}. Hãy yêu cầu 
 msgid "Cloud workspace"
 msgstr "Workspace cloud"
 
+msgid "Cloud workspaces ignore this variable. Agents sign in under Settings › Agents instead."
+msgstr "Workspace đám mây bỏ qua biến này. Thay vào đó, các agent đăng nhập trong Cài đặt › Agent."
+
 msgid "Co-founder & CTO, TrainLoop (YC W25)"
 msgstr "Đồng sáng lập & CTO, TrainLoop (YC W25)"
 

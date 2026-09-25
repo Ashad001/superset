@@ -16,6 +16,23 @@ export const AGENT_CREDENTIAL_ENV_NAMES = [
 export type AgentCredentialEnvName =
 	(typeof AGENT_CREDENTIAL_ENV_NAMES)[number];
 
+/**
+ * What a cloud workspace never takes from an environment: the agent's
+ * credential is the person's sign-in, and a key here would be picked up by
+ * whatever runs in a terminal and billed with nobody looking.
+ */
+export const CLOUD_WORKSPACE_IGNORED_ENV_NAMES = [
+	"ANTHROPIC_API_KEY",
+	"CLAUDE_CODE_OAUTH_TOKEN",
+	"OPENAI_API_KEY",
+] as const;
+
+export function isCloudWorkspaceIgnoredEnvName(name: string): boolean {
+	return (CLOUD_WORKSPACE_IGNORED_ENV_NAMES as readonly string[]).includes(
+		name,
+	);
+}
+
 export interface AgentCredentialShape {
 	agent: string;
 	kind: "subscription" | "api_key";

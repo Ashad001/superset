@@ -3483,6 +3483,9 @@ msgstr "Sandbox cloud belum diaktifkan untuk {account}. Minta akses kepada tim S
 msgid "Cloud workspace"
 msgstr "Workspace cloud"
 
+msgid "Cloud workspaces ignore this variable. Agents sign in under Settings › Agents instead."
+msgstr "Workspace cloud mengabaikan variabel ini. Agen masuk melalui Pengaturan › Agen sebagai gantinya."
+
 msgid "Co-founder & CTO, TrainLoop (YC W25)"
 msgstr "Pendiri bersama & CTO, TrainLoop (YC W25)"
 

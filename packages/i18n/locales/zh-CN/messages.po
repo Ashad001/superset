@@ -3483,6 +3483,9 @@ msgstr "{account} 尚未启用云端沙箱。请向 Superset 团队申请访问�
 msgid "Cloud workspace"
 msgstr "云端工作区"
 
+msgid "Cloud workspaces ignore this variable. Agents sign in under Settings › Agents instead."
+msgstr "云工作区会忽略此变量。智能体改为在「设置 › 智能体」中登录。"
+
 msgid "Co-founder & CTO, TrainLoop (YC W25)"
 msgstr "联合创始人兼 CTO，TrainLoop (YC W25)"
 

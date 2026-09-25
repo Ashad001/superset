@@ -3483,6 +3483,9 @@ msgstr "Cloudsandboxen zijn niet ingeschakeld voor {account}. Vraag het Superset
 msgid "Cloud workspace"
 msgstr "Cloudwerkruimte"
 
+msgid "Cloud workspaces ignore this variable. Agents sign in under Settings › Agents instead."
+msgstr "Cloudworkspaces negeren deze variabele. Agents melden zich in plaats daarvan aan via Instellingen › Agents."
+
 msgid "Co-founder & CTO, TrainLoop (YC W25)"
 msgstr "Medeoprichter en CTO, TrainLoop (YC W25)"
 

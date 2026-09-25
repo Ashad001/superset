@@ -3483,6 +3483,9 @@ msgstr "Le sandbox nel cloud non sono abilitate per {account}. Richiedi l'access
 msgid "Cloud workspace"
 msgstr "Workspace cloud"
 
+msgid "Cloud workspaces ignore this variable. Agents sign in under Settings › Agents instead."
+msgstr "Gli spazi di lavoro cloud ignorano questa variabile. Gli agenti accedono invece da Impostazioni › Agenti."
+
 msgid "Co-founder & CTO, TrainLoop (YC W25)"
 msgstr "Cofondatore e CTO, TrainLoop (YC W25)"
 

@@ -3483,6 +3483,9 @@ msgstr "Piaskownice w chmurze nie są włączone dla {account}. Poproś zespół
 msgid "Cloud workspace"
 msgstr "Obszar roboczy w chmurze"
 
+msgid "Cloud workspaces ignore this variable. Agents sign in under Settings › Agents instead."
+msgstr "Chmurowe przestrzenie robocze ignorują tę zmienną. Agenci logują się zamiast tego w Ustawienia › Agenci."
+
 msgid "Co-founder & CTO, TrainLoop (YC W25)"
 msgstr "Współzałożyciel i CTO, TrainLoop (YC W25)"
 

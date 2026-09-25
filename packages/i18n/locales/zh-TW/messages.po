@@ -3483,6 +3483,9 @@ msgstr "{account} 尚未啟用雲端沙箱。請向 Superset 團隊申請存取�
 msgid "Cloud workspace"
 msgstr "雲端工作區"
 
+msgid "Cloud workspaces ignore this variable. Agents sign in under Settings › Agents instead."
+msgstr "雲端工作區會忽略此變數。代理程式改為在「設定 › 代理程式」中登入。"
+
 msgid "Co-founder & CTO, TrainLoop (YC W25)"
 msgstr "共同創辦人暨 CTO，TrainLoop (YC W25)"
 
