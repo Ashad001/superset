@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "54a8f47f-7169-41b9-acbc-da44330d87b9",
+  "id": "1cb7970e-1036-48bc-a9b8-72d93b11443b",
   "prevId": "0e715723-7da8-490d-b410-e79c1f887fb7",
   "tables": {
     "host_agent_configs": {
@@ -174,96 +174,6 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "local_tasks": {
-      "name": "local_tasks",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'todo'"
-        },
-        "position": {
-          "name": "position",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "local_tasks_project_id_idx": {
-          "name": "local_tasks_project_id_idx",
-          "columns": [
-            "project_id"
-          ],
-          "isUnique": false
-        },
-        "local_tasks_status_idx": {
-          "name": "local_tasks_status_idx",
-          "columns": [
-            "status"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "local_tasks_project_id_projects_id_fk": {
-          "name": "local_tasks_project_id_projects_id_fk",
-          "tableFrom": "local_tasks",
-          "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
@@ -1190,14 +1100,6 @@
             "pull_request_id"
           ],
           "isUnique": false
-        },
-        "workspaces_one_main_per_project": {
-          "name": "workspaces_one_main_per_project",
-          "columns": [
-            "project_id"
-          ],
-          "isUnique": true,
-          "where": "type = 'main'"
         }
       },
       "foreignKeys": {

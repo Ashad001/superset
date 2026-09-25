@@ -7,12 +7,12 @@ import { cn } from "@superset/ui/utils";
 
 export interface NeighborRow {
 	rank: number;
-	tokens: number;
+	tokens: string;
 	tier: number;
 }
 
 interface RankNeighborsProps {
-	me: { rank: number; tokens: number };
+	me: { rank: number; tokens: string };
 	rows: NeighborRow[];
 }
 
@@ -59,6 +59,8 @@ export function RankNeighbors({ me, rows }: RankNeighborsProps) {
 	const above = rows.find((row) => row.rank === me.rank - 1) ?? null;
 	const below = rows.find((row) => row.rank === me.rank + 1) ?? null;
 	if (!above && !below) return null;
+	const aboveGap = above ? BigInt(above.tokens) - BigInt(me.tokens) : 0n;
+	const belowGap = below ? BigInt(me.tokens) - BigInt(below.tokens) : 0n;
 
 	const strip = [
 		above && {
@@ -74,7 +76,7 @@ export function RankNeighbors({ me, rows }: RankNeighborsProps) {
 			label: <Trans>You</Trans>,
 			detail: above ? (
 				<Trans>
-					{formatTokens(above.tokens - me.tokens)} to pass #
+					{formatTokens(aboveGap > 0n ? aboveGap : 0n)} to pass #
 					{formatNumber(above.rank)}
 				</Trans>
 			) : null,
@@ -85,7 +87,9 @@ export function RankNeighbors({ me, rows }: RankNeighborsProps) {
 			tokens: below.tokens,
 			label: aliasFor(below.rank),
 			detail: (
-				<Trans>{formatTokens(me.tokens - below.tokens)} behind you</Trans>
+				// Clamped: standings are CDN-cached, so right after a publish
+				// the live "me" total can already have overtaken a stale neighbor.
+				<Trans>{formatTokens(belowGap > 0n ? belowGap : 0n)} behind you</Trans>
 			),
 			isMe: false,
 		},

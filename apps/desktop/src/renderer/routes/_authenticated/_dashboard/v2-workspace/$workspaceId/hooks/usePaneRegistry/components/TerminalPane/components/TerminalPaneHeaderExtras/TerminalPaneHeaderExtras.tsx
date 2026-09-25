@@ -8,6 +8,7 @@ import {
 	terminalRichInputOpenStore,
 	useTerminalRichInputOpen,
 } from "../../richInputOpenStore";
+import { TerminalAccountUsage } from "./components/TerminalAccountUsage";
 import { TerminalConnectionIndicator } from "./components/TerminalConnectionIndicator";
 import { TerminalIdCopyMenu } from "./components/TerminalIdCopyMenu";
 import { TerminalPageWatchChip } from "./components/TerminalPageWatchChip";
@@ -18,6 +19,7 @@ interface TerminalPaneHeaderExtrasProps {
 	workspaceId: string;
 	terminalId: string;
 	terminalInstanceId: string;
+	onNewShell: () => Promise<void>;
 	onCreateNewAgentSession: (input: {
 		configId: string;
 		placement: "split-pane" | "new-tab";
@@ -40,6 +42,7 @@ export function TerminalPaneHeaderExtras({
 	terminalInstanceId,
 	onCreateNewAgentSession,
 	onOpenSubagent,
+	onNewShell,
 }: TerminalPaneHeaderExtrasProps) {
 	const { t } = useLingui();
 	const isOpen = useTerminalRichInputOpen();
@@ -54,7 +57,12 @@ export function TerminalPaneHeaderExtras({
 				});
 
 	return (
-		<div className="flex items-center">
+		<div className="flex items-center gap-1">
+			<TerminalAccountUsage
+				key={`${workspaceId}:${terminalId}`}
+				workspaceId={workspaceId}
+				terminalId={terminalId}
+			/>
 			<TerminalSubagentsMenu
 				workspaceId={workspaceId}
 				terminalId={terminalId}
@@ -63,6 +71,7 @@ export function TerminalPaneHeaderExtras({
 			<TerminalConnectionIndicator
 				terminalId={terminalId}
 				terminalInstanceId={terminalInstanceId}
+				onNewShell={onNewShell}
 			/>
 			<TerminalPageWatchChip
 				workspaceId={workspaceId}
@@ -82,7 +91,8 @@ export function TerminalPaneHeaderExtras({
 						aria-label={label}
 						aria-pressed={isOpen}
 						className={cn(
-							"rounded p-0.5 transition-colors",
+							// ⌘I still opens it; the button yields to split/close first.
+							"hidden rounded p-1 transition-colors @min-[200px]/pane-header:block",
 							isOpen
 								? "bg-secondary text-foreground"
 								: "text-muted-foreground/60 hover:text-muted-foreground",

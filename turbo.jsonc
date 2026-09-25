@@ -25,6 +25,7 @@
 		"VERCEL_URL",
 		"npm_lifecycle_event",
 		"RENDERER_REMOTE_DEBUG_PORT",
+		"SUPERSET_WORKSPACE_ID",
 		"SUPERSET_PTY_DAEMON_ADOPT_IN_DEV",
 		"SUPERSET_HOST_WORKER_SCRIPT_PATH",
 		"SUPERSET_CHAT_V3_MIGRATIONS",
@@ -59,7 +60,7 @@
 			// Emits declarations from source, so it needs the same upstream
 			// generated inputs a build does — the compiled Lingui catalogs in
 			// particular, which host-service reaches through @superset/i18n.
-			"dependsOn": ["^build"],
+			"dependsOn": ["^build", "^build:types"],
 			"outputs": ["dist-types/**"]
 		},
 		"typecheck": {
