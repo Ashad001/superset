@@ -59,7 +59,12 @@ export function buildPolicy(
 	};
 }
 
-type MapKey = "fileLinks" | "urlLinks" | "imageLinks" | "sidebarFileLinks";
+type MapKey =
+	| "fileLinks"
+	| "urlLinks"
+	| "imageLinks"
+	| "sidebarFileLinks"
+	| "pageLinks";
 
 export function usePolicy(
 	key: MapKey,

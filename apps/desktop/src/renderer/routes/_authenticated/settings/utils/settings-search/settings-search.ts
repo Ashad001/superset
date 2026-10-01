@@ -38,6 +38,8 @@ export const SETTING_ITEM_ID = {
 	KEYBOARD_SHORTCUTS: "keyboard-shortcuts",
 	BEHAVIOR_CONFIRM_QUIT: "behavior-confirm-quit",
 	BEHAVIOR_FILE_OPEN_MODE: "behavior-file-open-mode",
+	BEHAVIOR_FILE_AUTO_SAVE: "behavior-file-auto-save",
+	BEHAVIOR_AGENT_SESSION_PLACEMENT: "behavior-agent-session-placement",
 	BEHAVIOR_CHANGES_OPEN_TARGET: "behavior-changes-open-target",
 	BEHAVIOR_RESOURCE_MONITOR: "behavior-resource-monitor",
 	USAGE_IN_SIDEBAR: "usage-in-sidebar",
@@ -187,6 +189,8 @@ export const SETTING_ITEM_VARIANT: Record<SettingItemId, SettingVariant> = {
 
 	[SETTING_ITEM_ID.BEHAVIOR_CONFIRM_QUIT]: "shared",
 	[SETTING_ITEM_ID.BEHAVIOR_FILE_OPEN_MODE]: "v1",
+	[SETTING_ITEM_ID.BEHAVIOR_FILE_AUTO_SAVE]: "v2",
+	[SETTING_ITEM_ID.BEHAVIOR_AGENT_SESSION_PLACEMENT]: "v2",
 	// The top-bar Changes control is a v2-only surface.
 	[SETTING_ITEM_ID.BEHAVIOR_CHANGES_OPEN_TARGET]: "v2",
 	[SETTING_ITEM_ID.BEHAVIOR_RESOURCE_MONITOR]: "shared",
@@ -804,7 +808,7 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
 	},
 	{
 		id: SETTING_ITEM_ID.BEHAVIOR_FILE_OPEN_MODE,
-		section: "behavior",
+		section: "files",
 		title: "File open mode",
 		description:
 			"Choose how files open when clicked in the file tree or changes view",
@@ -819,6 +823,41 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
 			"split pane",
 			"viewer",
 			"behavior",
+		],
+	},
+	{
+		id: SETTING_ITEM_ID.BEHAVIOR_FILE_AUTO_SAVE,
+		section: "files",
+		title: "Auto Save",
+		description: "Controls when manually edited files are saved",
+		keywords: [
+			"file",
+			"save",
+			"autosave",
+			"auto save",
+			"afterdelay",
+			"after delay",
+			"onfocuschange",
+			"on focus change",
+			"onwindowchange",
+			"on window change",
+		],
+	},
+	{
+		id: SETTING_ITEM_ID.BEHAVIOR_AGENT_SESSION_PLACEMENT,
+		section: "behavior",
+		title: "New agent sessions",
+		description:
+			"Choose where agents started from comments, design mode, and Pages open.",
+		keywords: [
+			"agent",
+			"placement",
+			"split",
+			"pane",
+			"tab",
+			"design",
+			"comments",
+			"pages",
 		],
 	},
 	{
@@ -894,7 +933,7 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
 	},
 	{
 		id: SETTING_ITEM_ID.BEHAVIOR_OPEN_LINKS_IN_APP,
-		section: "behavior",
+		section: "browser",
 		title: "Open links in the in-app browser",
 		description:
 			"Open links from chat and terminal in the in-app browser instead of your default browser",
@@ -975,6 +1014,7 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
 			"claude",
 			"codex",
 			"pi",
+			"ufo",
 		],
 	},
 	{
@@ -1005,6 +1045,7 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
 			"muse",
 			"meta",
 			"devin",
+			"ufo",
 			"cognition",
 			"fx",
 			"vercel",
@@ -1081,6 +1122,7 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
 			"muse",
 			"meta",
 			"devin",
+			"ufo",
 			"cognition",
 			"fx",
 			"vercel",
@@ -1170,7 +1212,7 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
 	},
 	{
 		id: SETTING_ITEM_ID.LINKS_FILE,
-		section: "links",
+		section: "files",
 		title: "File links",
 		description:
 			"How file paths open when clicked in terminals, chat, and tasks",
@@ -1193,27 +1235,8 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
 		],
 	},
 	{
-		id: SETTING_ITEM_ID.LINKS_IMAGE,
-		section: "links",
-		title: "Image links",
-		description:
-			"How images pasted into a terminal open when their placeholder is clicked",
-		keywords: [
-			"links",
-			"image",
-			"images",
-			"paste",
-			"pasted",
-			"screenshot",
-			"preview",
-			"click",
-			"cmd",
-			"shift",
-		],
-	},
-	{
 		id: SETTING_ITEM_ID.LINKS_FOLDER,
-		section: "links",
+		section: "files",
 		title: "Folder links",
 		description:
 			"How folder paths open when clicked in terminals: reveal in sidebar, editor, or Finder",
@@ -1238,7 +1261,7 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
 	},
 	{
 		id: SETTING_ITEM_ID.LINKS_URL,
-		section: "links",
+		section: "browser",
 		title: "URL links",
 		description: "How URLs open when clicked in terminals, chat, and tasks",
 		keywords: [
@@ -1263,7 +1286,7 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
 	},
 	{
 		id: SETTING_ITEM_ID.LINKS_SIDEBAR_FILE,
-		section: "links",
+		section: "files",
 		title: "Sidebar file rows",
 		description:
 			"How file rows in the file tree, changes list, and diff header open when clicked",
@@ -1289,7 +1312,7 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
 	},
 	{
 		id: SETTING_ITEM_ID.LINKS_PORT,
-		section: "links",
+		section: "browser",
 		title: "Ports",
 		description:
 			"How detected-port badges in the sidebar open when clicked (in-app or system browser)",
@@ -1316,20 +1339,26 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
 	},
 	{
 		id: SETTING_ITEM_ID.LINKS_PAGE,
-		section: "links",
-		title: "Pages",
+		section: "files",
+		title: "Page links",
 		description:
-			"Whether Page links (in terminals, chat, and task markdown) open inside Superset or the system browser",
+			"How pages open when clicked in the Pages menu, terminals, chat, and other pages",
 		keywords: [
 			"links",
 			"page",
 			"pages",
 			"click",
+			"cmd",
+			"ctrl",
+			"shift",
+			"meta",
+			"pane",
+			"new tab",
 			"browser",
-			"in-app",
-			"system",
 			"external",
 			"open",
+			"terminal",
+			"chat",
 			"behavior",
 		],
 	},

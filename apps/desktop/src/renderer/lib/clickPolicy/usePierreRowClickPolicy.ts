@@ -11,6 +11,7 @@ interface UsePierreRowClickPolicyOptions {
 	 * join with their own `rootPath`.
 	 */
 	onSelectFile: (relativePath: string, openInNewTab?: boolean) => void;
+	onRename: (relativePath: string) => void;
 	/**
 	 * Open the path (file or folder) outside the app — the user's external
 	 * editor, or the OS default handler with `{ defaultApp: true }`. Receives
@@ -48,6 +49,7 @@ interface UsePierreRowClickPolicyResult {
 export function usePierreRowClickPolicy({
 	filePolicy,
 	onSelectFile,
+	onRename,
 	openInExternalEditor,
 }: UsePierreRowClickPolicyOptions): UsePierreRowClickPolicyResult {
 	const findRow = useCallback((e: React.MouseEvent): HTMLElement | null => {
@@ -74,6 +76,12 @@ export function usePierreRowClickPolicy({
 			const treePath = findRow(e)?.getAttribute("data-item-path");
 			if (!treePath) return;
 			const trimmed = treePath.endsWith("/") ? treePath.slice(0, -1) : treePath;
+			if (e.detail === 2 && e.button === 0) {
+				e.preventDefault();
+				e.stopPropagation();
+				onRename(treePath);
+				return;
+			}
 
 			if (treePath.endsWith("/")) {
 				const intent = folderIntentFor(e);
@@ -99,7 +107,7 @@ export function usePierreRowClickPolicy({
 			else if (action === "newTab") onSelectFile(trimmed, true);
 			else if (action === "pane") onSelectFile(trimmed, false);
 		},
-		[filePolicy, onSelectFile, openInExternalEditor, findRow],
+		[filePolicy, onSelectFile, onRename, openInExternalEditor, findRow],
 	);
 
 	return { onClickCapture, findFileRow };

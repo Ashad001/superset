@@ -78,6 +78,21 @@ own subscribers stay live as before. Reaches a box only through a
 host-service release. **Open:** mobile receives the field and renders nothing
 for it yet.
 
+**Nobody on the box knows who is in it.** A host is one person's machine, so
+a workspace row implies its owner and the sidebar never had to say. A cloud
+workspace is opened by any member of the organization, and host-service inside
+it sees only tickets, not people; the only thing that knows who opened a box
+is the API that minted the ticket. So `cloudWorkspace.access` with `wake`
+(the open workspace's keepalive, every ten minutes) upserts
+`cloud_workspace_presence` (workspace, user, first/last seen) and the list
+returns each row's creator and everyone who has opened it. A person is
+"active" while their last wake is under fifteen minutes old; the presence
+change rides the same realtime patch as the agent status, so open clients
+update the row without a list refetch. Addressing a listed workspace
+(`wake: false`) records nothing: every sidebar addresses every ready box.
+**Open:** presence is only ever written, never trimmed; the CLI and MCP count
+as being in a box because they wake it too.
+
 **A woken sandbox answers seconds after the wake, and every pane reconnects
 at once.** A resumed session has no processes; `wake` starts host-service
 and returns before it listens. The open workspace's hook therefore holds the
@@ -238,6 +253,17 @@ deliberately not `shouldOpenBrowser()` from `lib/auth.ts`, whose extra TTY
 test is right for an interactive login prompt and wrong for an agent running
 the CLI with piped stdout.
 
+**A box has no agents until something lists them. Worked around, Open.**
+`agents.run` finds its agent in host-service's `host_agent_configs` table, and
+only a list call (`settings.agentConfigs.list`) or the first-boot launch fills
+it with the built-in presets. The desktop lists on every open, so a machine
+someone uses never shows this. A box that nobody opened and that launched no
+agent answers "No host agent config matching 'claude'". Automation dispatch
+lists before it runs (`cloudDispatch.ts`); `superset agents create` into such a
+box still fails. Still owed: `agents.run` fills the table itself (a host-service
+release), and a decision on which agents a box offers — the list fills every
+preset, but the image installs only Claude and Codex.
+
 ## Lifecycle
 
 **Delete is not wired.** The generic delete routes to the owning host, which
@@ -372,7 +398,7 @@ and the release poll until `currentSnapshotId` has changed and the status is
 **Snapshots exist only in the region they were taken.** Forking a golden into
 another region is refused (`snapshot_region_mismatch`), and failover regions
 don't replicate it. Forks therefore inherit the golden's region and only
-image-created sandboxes get `VERCEL_SANDBOX_REGION` — passing the setting on
+image-created sandboxes take the environment's `region` — passing a region on
 a fork was what failed every workspace once the goldens moved to sfo1.
 
 **The firewall policy is live-updatable and forks carry it.** Credential
