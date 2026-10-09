@@ -36,6 +36,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 import { env } from "../../env";
+import { deletePageStorage } from "../../lib/page-store";
 import { deleteObjects, objectExists, presignedGetUrl } from "../../lib/r2";
 import { protectedProcedure, publicProcedure, userError } from "../../trpc";
 import { requireActiveOrgMembership } from "../utils/active-org";
@@ -43,6 +44,7 @@ import { assertPageReadable, assertPageWritable } from "./access";
 import { pageAssetRouter } from "./assets";
 import { decodePageCursor, encodePageCursor } from "./cursor";
 import { pageUrl } from "./page-url";
+import { pagePreview } from "./preview";
 import { publishPage } from "./publish";
 import { isEntryPathConflict } from "./publish-rules";
 import { pageReportRouter } from "./reports";
@@ -58,6 +60,7 @@ import {
 	type PageListScope,
 	pageCountsSchema,
 	pageFields,
+	pagePreviewSchema,
 	pageRefSchema,
 	publicPageSchema,
 	publishPageSchema,
@@ -219,6 +222,14 @@ async function latestVersionNumber(pageId: string): Promise<number | null> {
 		.orderBy(desc(pageVersions.version))
 		.limit(1);
 	return row?.version ?? null;
+}
+
+async function wipePageStorage(pageId: string): Promise<void> {
+	try {
+		await deletePageStorage(pageId);
+	} catch (error) {
+		console.error("[pages] hub wipe failed after delete", { pageId, error });
+	}
 }
 
 async function listPageBatch({
@@ -641,6 +652,16 @@ export const pageRouter = {
 		};
 	}),
 
+	preview: protectedProcedure
+		.input(pagePreviewSchema)
+		.query(async ({ ctx, input }) =>
+			pagePreview({
+				slug: input.slug,
+				organizationId: await requireActiveOrgMembership(ctx),
+				userId: ctx.session.user.id,
+			}),
+		),
+
 	/**
 	 * The page a workspace path anchors to, for the CLI's directory publish:
 	 * it compares each asset's hash against the previous version and reuses
@@ -980,6 +1001,7 @@ export const pageRouter = {
 						),
 					)
 					.returning({ id: pages.id });
+				if (discarded) await wipePageStorage(page.id);
 				return { id: page.id, deleted: Boolean(discarded) };
 			}
 
@@ -1042,6 +1064,8 @@ export const pageRouter = {
 					error,
 				});
 			}
+
+			await wipePageStorage(page.id);
 
 			return { id: page.id, deleted: true };
 		}),
