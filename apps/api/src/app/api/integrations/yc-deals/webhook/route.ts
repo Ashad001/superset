@@ -2,6 +2,7 @@ import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import { db } from "@superset/db/client";
 import { dealRedemptions } from "@superset/db/schema";
 import { YcDealCodeEmail } from "@superset/email/emails/billing/yc-deal-code";
+import { NOREPLY_FROM } from "@superset/email/sender";
 import { and, eq } from "drizzle-orm";
 import { Resend } from "resend";
 import Stripe from "stripe";
@@ -69,10 +70,10 @@ async function sendCode(email: string, payload: Payload): Promise<Outcome> {
 	});
 
 	const { error } = await resend.emails.send({
-		from: "Superset <noreply@superset.sh>",
+		from: NOREPLY_FROM,
 		replyTo: "kiet@superset.sh",
 		to: email,
-		subject: "Your Superset YC deal code",
+		subject: "Your Paradev YC deal code",
 		react: YcDealCodeEmail({
 			firstName: payload.first_name,
 			code: promotionCode.code,

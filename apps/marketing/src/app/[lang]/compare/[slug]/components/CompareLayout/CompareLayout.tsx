@@ -1,9 +1,9 @@
 "use client";
 
 import { Trans } from "@lingui/react/macro";
-import Link from "next/link";
 import type { ReactNode } from "react";
 import { GridCross } from "@/app/[lang]/blog/components/GridCross";
+import { DownloadLink } from "@/app/[lang]/components/DownloadLink";
 import {
 	type ComparisonPage,
 	formatCompareDate,
@@ -85,14 +85,15 @@ export function CompareLayout({ page, children }: CompareLayoutProps) {
 				</div>
 				<div className="max-w-3xl mx-auto px-6 py-10 text-center">
 					<p className="text-muted-foreground mb-4">
-						<Trans>Ready to try Superset?</Trans>
+						<Trans>Ready to try Paradev?</Trans>
 					</p>
-					<Link
-						href="/download"
+					<DownloadLink
+						source="compare"
+						properties={{ slug: page.slug }}
 						className="inline-flex items-center gap-2 text-sm font-medium text-foreground hover:text-foreground/80 transition-colors border border-border rounded-md px-4 py-2"
 					>
-						<Trans>Download Superset</Trans>
-					</Link>
+						<Trans>Download Paradev</Trans>
+					</DownloadLink>
 				</div>
 			</footer>
 		</article>

@@ -7,7 +7,7 @@ import {
 	type FormValues,
 	isInvalidNumber,
 	type QuestionPage as Page,
-} from "../../utils/questionPages";
+} from "../../../../../../../../utils/questionPages";
 
 type Choice = NonNullable<FormField["options"]>[number];
 
@@ -37,7 +37,8 @@ export function QuestionPage({
 	const isPicked = (value: string) =>
 		Array.isArray(current) ? current.includes(value) : current === value;
 	const textField = freeform ? field : other;
-	const typed = textField ? answerText(values[textField.id]) : "";
+	const textValue = textField ? values[textField.id] : undefined;
+	const typed = answerText(textValue);
 	const invalid = isInvalidNumber(field, values[field.id]);
 
 	return (
@@ -59,7 +60,7 @@ export function QuestionPage({
 						<button
 							aria-pressed={picked}
 							className={cn(
-								"group flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left text-sm outline-none transition-all",
+								"group flex w-full items-start gap-3 rounded-lg border px-3 py-2 text-left text-sm outline-none transition-colors",
 								"focus-visible:ring-2 focus-visible:ring-ring/50",
 								picked
 									? "border-foreground/25 bg-foreground/[0.07]"
@@ -71,7 +72,7 @@ export function QuestionPage({
 						>
 							<span
 								className={cn(
-									"flex size-[18px] shrink-0 items-center justify-center border transition-colors",
+									"mt-px flex size-[18px] shrink-0 items-center justify-center border transition-colors",
 									multi ? "rounded-[5px]" : "rounded-full",
 									picked
 										? "border-foreground bg-foreground text-background"
@@ -89,7 +90,10 @@ export function QuestionPage({
 								)}
 							</span>
 							{index < 9 && (
-								<kbd className="hidden shrink-0 rounded border border-border/60 px-1.5 font-mono text-[10px] text-muted-foreground/70 group-hover:inline-block">
+								<kbd
+									aria-hidden
+									className="mt-0.5 shrink-0 rounded border border-border/60 px-1.5 font-mono text-[10px] text-muted-foreground/70 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+								>
 									{index + 1}
 								</kbd>
 							)}
@@ -136,7 +140,7 @@ export function QuestionPage({
 							}
 							step={field.input === "integer" ? 1 : "any"}
 							type={numeric ? "number" : "text"}
-							value={typed}
+							value={typeof textValue === "string" ? textValue : typed}
 						/>
 					</label>
 				)}

@@ -1,5 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import { acpHarnessForPreset } from "@superset/chat/core";
+import { errorMessage } from "@superset/i18n/errors";
+import { isCloudUsageRefusal } from "@superset/shared/billing";
 import { startableCloudEnvironments } from "@superset/shared/cloud-environments";
 import { CLOUD_HOST_ID } from "@superset/shared/host-routing";
 import { toast } from "@superset/ui/sonner";
@@ -8,10 +10,12 @@ import { useCallback, useRef, useState } from "react";
 import { useAwaitAcpChatEnabled } from "renderer/hooks/useAcpChatEnabled";
 import { useActiveOrganizationId } from "renderer/hooks/useActiveOrganizationId";
 import { cloudTrpc, cloudTrpcClient } from "renderer/lib/cloud-trpc";
+import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import type { NewWorkspacePromptContextApi } from "renderer/stores/new-workspace-prompt-context";
 import { usePromptHistoryStore } from "renderer/stores/prompt-history";
 import { useWorkspaceCreates } from "renderer/stores/workspace-creates";
+import { seedPendingCloudChat } from "renderer/stores/workspace-creates/pendingCloudChat";
 import { useDashboardNewWorkspaceDraft } from "../../../../../DashboardNewWorkspaceDraftContext";
 import type { WorkspaceCreateAgent } from "../../types";
 import type { UseUploadAttachmentsApi } from "../useUploadAttachments";
@@ -32,12 +36,19 @@ export function useSubmitWorkspace(
 	selectedMode: string | null,
 	uploadAttachments: UseUploadAttachmentsApi,
 	promptContext: NewWorkspacePromptContextApi,
+	/** Where a cloud workspace starts: the environment the create surface resolved. */
+	cloudTarget: {
+		environmentId: string | null;
+		/** The project's repository; the environment must still open on it. */
+		repositoryFullName: string | null;
+	} = { environmentId: null, repositoryFullName: null },
 ) {
 	const { t } = useLingui();
 	const navigate = useNavigate();
 	const matchRoute = useMatchRoute();
 	const { closeAndResetDraft, draft } = useDashboardNewWorkspaceDraft();
 	const { submit } = useWorkspaceCreates();
+	const collections = useCollections();
 	const { machineId } = useLocalHostService();
 	const activeOrganizationId = useActiveOrganizationId();
 	const awaitAcpChatEnabled = useAwaitAcpChatEnabled();
@@ -116,22 +127,32 @@ export function useSubmitWorkspace(
 		// Cloud workspaces are provisioned by the API, not the local host, so
 		// they bypass the host `workspaces.create` path entirely.
 		if (isCloud) {
-			const environments = await cloudTrpcClient.environment.list.query({
-				organizationId: activeOrganizationId,
-			});
-			const startable = startableCloudEnvironments(environments);
-			const environment =
-				startable.find((row) => row.id === draft.environmentId) ?? startable[0];
-			if (!environment) {
-				toast.error(
-					t({
-						message:
-							"Add an environment in Settings before creating a cloud workspace",
-					}),
-				);
-				return;
-			}
 			try {
+				// A named pick is checked against the live list so a stale draft
+				// can't start a vanished environment; Default needs no list.
+				const liveEnvironment = cloudTarget.environmentId
+					? startableCloudEnvironments(
+							await cloudTrpcClient.environment.list.query({
+								organizationId: activeOrganizationId,
+							}),
+						).find((row) => row.id === cloudTarget.environmentId)
+					: undefined;
+				// An environment edited since the form loaded may open on another repository now.
+				const opensOnProject =
+					!cloudTarget.repositoryFullName ||
+					liveEnvironment?.repositories?.[0]?.fullName.toLowerCase() ===
+						cloudTarget.repositoryFullName.toLowerCase();
+				const environmentId =
+					liveEnvironment && opensOnProject ? liveEnvironment.id : null;
+				if (!environmentId) {
+					toast.error(
+						t({
+							message:
+								"Add an environment in Settings before creating a cloud workspace",
+						}),
+					);
+					return;
+				}
 				// A typed name wins; otherwise the API names it from the prompt,
 				// since nothing about a cloud workspace runs on this device.
 				// Returns as soon as the row exists — the sandbox is still being
@@ -153,9 +174,9 @@ export function useSubmitWorkspace(
 							timeoutMs: 2000,
 						})
 					: null;
-				const created = await createCloudWorkspace.mutateAsync({
+				const createdResult = await createCloudWorkspace.mutateAsync({
 					organizationId: activeOrganizationId,
-					environmentId: environment.id,
+					environmentId,
 					name: workspaceName ?? undefined,
 					// Linked PR and issue bodies can push this past the create input's
 					// 20,000-character cap.
@@ -168,6 +189,7 @@ export function useSubmitWorkspace(
 						)
 						.slice(0, 10),
 					branch: draft.baseBranch ?? branchName ?? undefined,
+					machineSize: draft.machineSize ?? undefined,
 					...(attachmentIds.length > 0
 						? { attachmentFileIds: attachmentIds }
 						: {}),
@@ -180,6 +202,17 @@ export function useSubmitWorkspace(
 							}
 						: {}),
 				});
+				const { initialLaunch, ...created } = createdResult;
+				if (initialLaunch?.surface === "chat") {
+					seedPendingCloudChat({
+						collections,
+						workspaceId: created.id,
+						launch: initialLaunch,
+						chatEnabled: await awaitAcpChatEnabled(),
+						modelId: selectedModel,
+						modeId: selectedMode,
+					});
+				}
 				closeAndResetDraft();
 				// The cloud list is what both the sidebar and the workspace route
 				// read, and nothing used to tell it a workspace had been created —
@@ -208,11 +241,22 @@ export function useSubmitWorkspace(
 				void utils.cloudWorkspace.list.invalidate();
 			} catch (error) {
 				toast.error(
-					error instanceof Error
-						? error.message
-						: t({
-								message: "Could not create cloud workspace",
-							}),
+					errorMessage(
+						error,
+						t({
+							message: "Could not create cloud workspace",
+						}),
+					),
+					isCloudUsageRefusal(error)
+						? {
+								action: {
+									label: t({ message: "Open billing" }),
+									onClick: () => {
+										void navigate({ to: "/settings/billing" });
+									},
+								},
+							}
+						: undefined,
 				);
 			}
 			return;
@@ -361,6 +405,7 @@ export function useSubmitWorkspace(
 		awaitAcpChatEnabled,
 		selectedPresetId,
 		closeAndResetDraft,
+		collections,
 		createCloudWorkspace,
 		draft,
 		isSession,
@@ -377,6 +422,8 @@ export function useSubmitWorkspace(
 		t,
 		uploadAttachments,
 		utils,
+		cloudTarget.environmentId,
+		cloudTarget.repositoryFullName,
 	]);
 
 	const submitWorkspace = useCallback(async () => {

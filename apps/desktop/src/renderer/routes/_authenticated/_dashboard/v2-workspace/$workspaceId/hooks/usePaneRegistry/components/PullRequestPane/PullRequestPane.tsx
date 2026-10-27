@@ -1,3 +1,4 @@
+import { useIsTabVisible } from "@superset/panes";
 import { workspaceTrpc } from "@superset/workspace-client";
 import { useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
@@ -6,6 +7,7 @@ import {
 	pullRequestRefFromUrl,
 } from "renderer/lib/github/pullRequestRef";
 import { PullRequestActions } from "renderer/routes/_authenticated/_dashboard/pull-requests/components/PullRequestActions";
+import type { PullRequestActivityThreads } from "renderer/routes/_authenticated/_dashboard/pull-requests/components/PullRequestActivity";
 import { PullRequestDetailContent } from "renderer/routes/_authenticated/_dashboard/pull-requests/components/PullRequestDetailContent";
 import {
 	type PullRequestDetailTab,
@@ -13,37 +15,32 @@ import {
 } from "renderer/routes/_authenticated/_dashboard/pull-requests/components/PullRequestDetailTabs";
 import { useWorkspace } from "renderer/routes/_authenticated/_dashboard/v2-workspace/providers/WorkspaceProvider";
 import { normalizeThreadsToComments } from "../../../../components/CommentsSection/utils/normalizeThreadsToComments";
-import type {
-	CommentPaneData,
-	PagePaneData,
-	PullRequestPaneData,
-} from "../../../../types";
+import type { PagePaneData, PullRequestPaneData } from "../../../../types";
 import {
 	type OpenReviewDiff,
 	useReviewCommentNavigation,
 } from "../../../useReviewCommentNavigation";
-import { PullRequestComments } from "./components/PullRequestComments";
 import { PullRequestEvidence } from "./components/PullRequestEvidence";
 import { usePullRequestEvidence } from "./hooks/usePullRequestEvidence";
 import { usePullRequestPaneDetail } from "./hooks/usePullRequestPaneDetail";
+import { buildReviewThreadEntries } from "./utils/buildReviewThreadEntries";
 
 interface PullRequestPaneProps {
 	data: PullRequestPaneData;
 	onOpenDiff: OpenReviewDiff;
-	onOpenComment: (comment: CommentPaneData) => void;
 	onOpenPage: (page: PagePaneData) => void;
 }
 
 export function PullRequestPane({
 	data,
 	onOpenDiff,
-	onOpenComment,
 	onOpenPage,
 }: PullRequestPaneProps) {
 	const navigate = useNavigate();
 	const [activeTab, setActiveTab] = useState<PullRequestDetailTab>("summary");
 	const { workspace, hostUrl: workspaceHostUrl } = useWorkspace();
 	const detail = usePullRequestPaneDetail(data);
+	const isTabVisible = useIsTabVisible();
 
 	// Review threads and the header's actions still go through the host that
 	// pushed the PR, so they exist only when this workspace's linked PR is
@@ -57,24 +54,49 @@ export function PullRequestPane({
 	const isLinkedPR = linkedRef !== null && isSamePullRequest(linkedRef, data);
 	const evidence = usePullRequestEvidence(
 		workspace.id,
-		isLinkedPR && activeTab === "summary",
+		isLinkedPR && activeTab === "summary" && isTabVisible,
 	);
 	const threads = workspaceTrpc.git.getPullRequestThreads.useQuery(
 		{ workspaceId: workspace.id },
 		{
-			enabled: isLinkedPR,
+			enabled: isLinkedPR && isTabVisible,
 			refetchInterval: 30_000,
 			refetchOnWindowFocus: true,
 		},
 	);
-	const comments = useMemo(
-		() =>
-			isLinkedPR && threads.data
-				? normalizeThreadsToComments(threads.data, linkedPR.data?.url)
-				: [],
-		[isLinkedPR, threads.data, linkedPR.data?.url],
-	);
 	const onOpenInDiff = useReviewCommentNavigation(workspace.id, onOpenDiff);
+	// The host's content read already carries the conversation; the threads
+	// query's copy of it only fills in for a host too old to send one.
+	const hasConversation = detail.data?.comments !== undefined;
+	const activityThreads = useMemo<
+		PullRequestActivityThreads | undefined
+	>(() => {
+		if (!isLinkedPR) return undefined;
+		const comments = (
+			threads.data
+				? normalizeThreadsToComments(threads.data, linkedPR.data?.url)
+				: []
+		).filter((comment) => comment.kind === "review" || !hasConversation);
+		return {
+			entries: buildReviewThreadEntries({
+				comments,
+				workspaceId: workspace.id,
+				onOpenInDiff,
+			}),
+			commentCount: comments.length,
+			isLoading: threads.isLoading,
+			isError: threads.isError,
+		};
+	}, [
+		isLinkedPR,
+		threads.data,
+		threads.isLoading,
+		threads.isError,
+		linkedPR.data?.url,
+		hasConversation,
+		workspace.id,
+		onOpenInDiff,
+	]);
 	const projectId = isLinkedPR ? workspace.projectId : null;
 	const hostId = isLinkedPR ? workspace.hostId : null;
 	const hostUrl = isLinkedPR ? workspaceHostUrl : null;
@@ -118,6 +140,7 @@ export function PullRequestPane({
 				hostUrl={workspaceHostUrl}
 				hostId={workspace.hostId}
 				commentTarget={commentTarget}
+				threads={activityThreads}
 				summaryAside={
 					isLinkedPR ? (
 						<PullRequestEvidence
@@ -138,18 +161,7 @@ export function PullRequestPane({
 						/>
 					) : null
 				}
-			>
-				{isLinkedPR ? (
-					<PullRequestComments
-						workspaceId={workspace.id}
-						comments={comments}
-						isLoading={threads.isLoading}
-						isError={threads.isError}
-						onOpenComment={onOpenComment}
-						onOpenInDiff={onOpenInDiff}
-					/>
-				) : null}
-			</PullRequestDetailContent>
+			/>
 		</div>
 	);
 }

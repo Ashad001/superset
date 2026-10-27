@@ -9,6 +9,7 @@ import { captureSessionAccount } from "../trpc/router/usage/session-account/sess
 import { ACP_HARNESSES } from "./acpCatalogue";
 import { resolveAgentCli } from "./agentCli";
 import { buildChatAgentEnv } from "./agentEnv";
+import { storeAgentImage } from "./agentImages";
 import type { ChatAgentBridge } from "./chatAgentBridge";
 
 async function resolveAttachment(attachmentId: string) {
@@ -49,9 +50,12 @@ export function acpHarnessFactory(
 			command: entry.binary,
 			cwd: options.cwd,
 			resolveAttachment,
+			storeImage: storeAgentImage,
 			...(entry.fullAccessModeId
 				? { defaultModeId: entry.fullAccessModeId }
 				: {}),
+			...(entry.clientApprovalModes ? { clientApprovalModes: true } : {}),
+			...(entry.forkAtMessage ? { forkAtMessage: true } : {}),
 			onSpawn: (pid) => agents?.spawned(options.sessionId, pid),
 			launch: async () => {
 				const cli = await resolveAgentCli({

@@ -99,17 +99,21 @@ function expandTildeAbsolute(input: string): string {
 	return normalize(trimmed);
 }
 
+function translateWorkspaceNotFound(error: unknown): never {
+	if (error instanceof WorkspaceNotFoundError) {
+		throw new TRPCError({
+			code: "NOT_FOUND",
+			message: error.message,
+		});
+	}
+	throw error;
+}
+
 function getFilesystemService(ctx: HostServiceContext, workspaceId: string) {
 	try {
 		return ctx.runtime.filesystem.getServiceForWorkspace(workspaceId);
 	} catch (error) {
-		if (error instanceof WorkspaceNotFoundError) {
-			throw new TRPCError({
-				code: "NOT_FOUND",
-				message: error.message,
-			});
-		}
-		throw error;
+		translateWorkspaceNotFound(error);
 	}
 }
 
@@ -303,9 +307,14 @@ export const filesystemRouter = router({
 				resolvedPath: string;
 				isDirectory: boolean;
 			} | null> => {
-				const resolvedRoot = ctx.runtime.filesystem.resolveWorkspaceRoot(
-					input.workspaceId,
-				);
+				let resolvedRoot: string;
+				try {
+					resolvedRoot = ctx.runtime.filesystem.resolveWorkspaceRoot(
+						input.workspaceId,
+					);
+				} catch (error) {
+					translateWorkspaceNotFound(error);
+				}
 
 				let targetPath: string;
 				if (input.path.startsWith("~")) {
@@ -488,6 +497,26 @@ export const filesystemRouter = router({
 			const { workspaceId, ...serviceInput } = input;
 			const service = getFilesystemService(ctx, workspaceId);
 			return await withFsErrorTranslation(() => service.copyPath(serviceInput));
+		}),
+
+	resolveFileReference: queryProcedure
+		.meta({ timeoutMs: 30_000 })
+		.input(
+			z.object({
+				workspaceId: z.string(),
+				reference: z.string(),
+				preferredRelativePaths: z.array(z.string()).optional(),
+			}),
+		)
+		.query(async ({ ctx, input }): Promise<{ resolvedPath: string } | null> => {
+			const service = getFilesystemService(ctx, input.workspaceId);
+			const match = await withFsErrorTranslation(() =>
+				service.resolveFileReference({
+					reference: input.reference,
+					preferredRelativePaths: input.preferredRelativePaths,
+				}),
+			);
+			return match ? { resolvedPath: match.absolutePath } : null;
 		}),
 
 	searchFiles: queryProcedure

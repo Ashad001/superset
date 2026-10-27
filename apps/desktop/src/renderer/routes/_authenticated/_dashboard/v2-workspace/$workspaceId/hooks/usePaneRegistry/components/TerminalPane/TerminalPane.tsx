@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import type { RendererContext } from "@superset/panes";
+import { type RendererContext, usePaneFocus } from "@superset/panes";
 import { toast } from "@superset/ui/sonner";
 import { cn } from "@superset/ui/utils";
 import { workspaceTrpc } from "@superset/workspace-client";
@@ -34,6 +34,7 @@ import {
 import { electronTrpcClient } from "renderer/lib/trpc-client";
 import { useOpenInExternalEditor } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/hooks/useOpenInExternalEditor";
 import { useRevealInFinder } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/hooks/useRevealInFinder";
+import { useRightPaneLinkTarget } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/providers/RightPaneLinkTargetProvider";
 import type {
 	PaneViewerData,
 	TerminalPaneData,
@@ -54,6 +55,7 @@ import {
 	runFolderLinkAction,
 	runUrlLinkAction,
 	type TerminalLinkActionDeps,
+	terminalPullRequestLinkAction,
 } from "../../utils/runTerminalLinkAction";
 import {
 	PasteUploadLimitError,
@@ -114,6 +116,7 @@ export function TerminalPane({
 	// Link actions are fired from event handlers (xterm clicks, context-menu
 	// selections) that outlive the render they were registered in, so the deps
 	// are read through a ref.
+	const rightPane = useRightPaneLinkTarget();
 	const linkActionDepsRef = useRef<TerminalLinkActionDeps>({
 		store: ctx.store,
 		onOpenFile,
@@ -121,6 +124,7 @@ export function TerminalPane({
 		openInExternalEditor,
 		revealInFinder,
 		worktreePath,
+		rightPane,
 	});
 	linkActionDepsRef.current = {
 		store: ctx.store,
@@ -129,6 +133,7 @@ export function TerminalPane({
 		openInExternalEditor,
 		revealInFinder,
 		worktreePath,
+		rightPane,
 	};
 	const [isSearchOpen, setIsSearchOpen] = useState(false);
 	// Open/closed is tracked per terminalId in a shared store so the header
@@ -255,6 +260,13 @@ export function TerminalPane({
 		[terminalId, terminalInstanceId, collections, workspaceId],
 	);
 
+	usePaneFocus(() => {
+		if (isRichInputOpen) return;
+		terminalRuntimeRegistry
+			.getTerminal(terminalId, terminalInstanceId)
+			?.focus();
+	});
+
 	useEffect(() => {
 		if (!ctx.isActive) return;
 		// Don't pull focus back to xterm while the rich-input overlay owns it.
@@ -375,7 +387,9 @@ export function TerminalPane({
 					);
 				},
 				onUrlClick: (event, url) => {
-					const action = getUrlAction(event, url);
+					const action =
+						terminalPullRequestLinkAction(event, url) ??
+						getUrlAction(event, url);
 					if (action === null) {
 						showHint(event.clientX, event.clientY);
 						return;
@@ -749,7 +763,9 @@ function resolveHoverLabel(
 		shiftKey: hovered.shift,
 	};
 	if (hovered.info.kind === "url") {
-		const action = getUrlAction(event, hovered.info.url);
+		const action =
+			terminalPullRequestLinkAction(event, hovered.info.url) ??
+			getUrlAction(event, hovered.info.url);
 		return action ? actionLabel(action, "url") : null;
 	}
 	if (hovered.info.kind === "image") {

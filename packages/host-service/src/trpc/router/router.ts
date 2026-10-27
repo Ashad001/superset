@@ -10,14 +10,17 @@ import { githubRouter } from "./github";
 import { healthRouter } from "./health";
 import { hostRouter } from "./host";
 import { issuesRouter } from "./issues";
+import { linkPreviewRouter } from "./link-preview";
 import { localTasksRouter } from "./local-tasks";
 import { mobileRouter } from "./mobile";
 import { notificationsRouter } from "./notifications";
 import { pageWatchRouter } from "./page-watch";
+import { panesRouter } from "./panes";
 import { portsRouter } from "./ports";
 import { projectRouter } from "./project";
 import { pullRequestsRouter } from "./pull-requests";
 import { sandboxRouter } from "./sandbox";
+import { sessionsRouter } from "./sessions";
 import { settingsRouter } from "./settings";
 import { systemRouter } from "./system";
 import { tagFoldersRouter } from "./tag-folders";
@@ -31,6 +34,7 @@ import { workspacesRouter } from "./workspaces";
 
 export const appRouter = router({
 	agents: agentsRouter,
+	sessions: sessionsRouter,
 	agentTooling: agentToolingRouter,
 	attachments: attachmentsRouter,
 	browser: browserRouter,
@@ -41,6 +45,7 @@ export const appRouter = router({
 	git: gitRouter,
 	github: githubRouter,
 	issues: issuesRouter,
+	linkPreview: linkPreviewRouter,
 	localTasks: localTasksRouter,
 	mobile: mobileRouter,
 	notifications: notificationsRouter,
@@ -48,6 +53,7 @@ export const appRouter = router({
 	project: projectRouter,
 	tagFolders: tagFoldersRouter,
 	pageWatch: pageWatchRouter,
+	panes: panesRouter,
 	ports: portsRouter,
 	sandbox: sandboxRouter,
 	settings: settingsRouter,

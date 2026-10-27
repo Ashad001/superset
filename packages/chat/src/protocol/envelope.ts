@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { cursorSchema } from "./cursor";
-import { itemSchema } from "./items";
+import { itemSchema, subagentStatusSchema } from "./items";
 
 export const sessionStatusSchema = z.enum([
 	"starting",
@@ -38,6 +38,7 @@ export const availableCommandSchema = z.looseObject({
 	name: z.string().min(1),
 	description: z.string().optional(),
 	hint: z.string().optional(),
+	category: z.enum(["native", "mcp"]).optional(),
 });
 export type AvailableCommand = z.infer<typeof availableCommandSchema>;
 
@@ -49,7 +50,11 @@ export const backgroundTaskSchema = z.looseObject({
 	kind: backgroundTaskKindSchema,
 	name: z.string(),
 	detail: z.string().optional(),
+	parentId: z.string().min(1).optional(),
 	canStop: z.boolean(),
+	canSteer: z.boolean().optional(),
+	canBackground: z.boolean().optional(),
+	subagentStatus: subagentStatusSchema.optional().catch(undefined),
 	startedAtMs: z.number(),
 });
 export type BackgroundTask = z.infer<typeof backgroundTaskSchema>;
@@ -121,6 +126,7 @@ export const deltaSchema = z.discriminatedUnion("type", [
 		type: z.literal("text"),
 		itemId: z.string().min(1),
 		append: z.string(),
+		parentItemId: z.string().min(1).optional(),
 	}),
 	z.looseObject({
 		type: z.literal("tool_input"),

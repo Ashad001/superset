@@ -4,6 +4,14 @@
 	"private": true,
 	"type": "module",
 	"exports": {
+		"./project-config": {
+			"types": "./src/project-config/index.ts",
+			"default": "./src/project-config/index.ts"
+		},
+		"./oauth-refresh": {
+			"types": "./src/oauth-refresh.ts",
+			"default": "./src/oauth-refresh.ts"
+		},
 		"./terminal-colors": "./src/terminal-colors.ts",
 		"./voice": {
 			"types": "./src/voice/index.ts",
@@ -21,6 +29,14 @@
 			"types": "./src/page-zoom.ts",
 			"default": "./src/page-zoom.ts"
 		},
+		"./desktop-notification": {
+			"types": "./src/desktop-notification.ts",
+			"default": "./src/desktop-notification.ts"
+		},
+		"./pane-layout-ops": {
+			"types": "./src/pane-layout-ops.ts",
+			"default": "./src/pane-layout-ops.ts"
+		},
 		"./usercontent": {
 			"types": "./src/usercontent/index.ts",
 			"default": "./src/usercontent/index.ts"
@@ -33,6 +49,14 @@
 			"types": "./src/page-storage-runtime.ts",
 			"default": "./src/page-storage-runtime.ts"
 		},
+		"./page-tools": {
+			"types": "./src/page-tools.ts",
+			"default": "./src/page-tools.ts"
+		},
+		"./page-tools-runtime": {
+			"types": "./src/page-tools-runtime.ts",
+			"default": "./src/page-tools-runtime.ts"
+		},
 		"./page-storage-hub": {
 			"types": "./src/page-storage-hub.ts",
 			"default": "./src/page-storage-hub.ts"
@@ -41,9 +65,21 @@
 			"types": "./src/page-storage.ts",
 			"default": "./src/page-storage.ts"
 		},
+		"./page-storage-records": {
+			"types": "./src/page-storage-records.ts",
+			"default": "./src/page-storage-records.ts"
+		},
 		"./page-presence": {
 			"types": "./src/page-presence.ts",
 			"default": "./src/page-presence.ts"
+		},
+		"./presence-visits": {
+			"types": "./src/presence-visits.ts",
+			"default": "./src/presence-visits.ts"
+		},
+		"./workspace-access": {
+			"types": "./src/workspace-access.ts",
+			"default": "./src/workspace-access.ts"
 		},
 		"./page-presence-client": {
 			"types": "./src/page-presence-client.ts",
@@ -89,9 +125,25 @@
 			"types": "./src/agent-status.ts",
 			"default": "./src/agent-status.ts"
 		},
+		"./app-identity": {
+			"types": "./src/app-identity.ts",
+			"default": "./src/app-identity.ts"
+		},
+		"./brand": {
+			"types": "./src/brand.ts",
+			"default": "./src/brand.ts"
+		},
 		"./constants": {
 			"types": "./src/constants.ts",
 			"default": "./src/constants.ts"
+		},
+		"./own-domains": {
+			"types": "./src/own-domains.ts",
+			"default": "./src/own-domains.ts"
+		},
+		"./legacy-host-redirects": {
+			"types": "./src/legacy-host-redirects.ts",
+			"default": "./src/legacy-host-redirects.ts"
 		},
 		"./format-scaled": {
 			"types": "./src/format-scaled.ts",
@@ -165,9 +217,17 @@
 			"types": "./src/dev-app-profile.ts",
 			"default": "./src/dev-app-profile.ts"
 		},
+		"./release-notes": {
+			"types": "./src/release-notes.ts",
+			"default": "./src/release-notes.ts"
+		},
 		"./desktop-notices": {
 			"types": "./src/desktop-notices.ts",
 			"default": "./src/desktop-notices.ts"
+		},
+		"./mcp-servers": {
+			"types": "./src/mcp-servers.ts",
+			"default": "./src/mcp-servers.ts"
 		},
 		"./media-files": {
 			"types": "./src/media-files.ts",
@@ -200,6 +260,10 @@
 		"./names": {
 			"types": "./src/names/index.ts",
 			"default": "./src/names/index.ts"
+		},
+		"./sharing": {
+			"types": "./src/sharing/index.ts",
+			"default": "./src/sharing/index.ts"
 		},
 		"./terminal-link-parsing": {
 			"types": "./src/terminal-link-parsing/index.ts",
@@ -325,6 +389,14 @@
 			"types": "./src/host-routing.ts",
 			"default": "./src/host-routing.ts"
 		},
+		"./channels": {
+			"types": "./src/channels.ts",
+			"default": "./src/channels.ts"
+		},
+		"./org-presence": {
+			"types": "./src/org-presence.ts",
+			"default": "./src/org-presence.ts"
+		},
 		"./realtime": {
 			"types": "./src/realtime.ts",
 			"default": "./src/realtime.ts"
@@ -365,9 +437,9 @@
 			"types": "./src/rrule.ts",
 			"default": "./src/rrule.ts"
 		},
-		"./terminal-session-handoff": {
-			"types": "./src/terminal-session-handoff.ts",
-			"default": "./src/terminal-session-handoff.ts"
+		"./session-handoff": {
+			"types": "./src/session-handoff.ts",
+			"default": "./src/session-handoff.ts"
 		},
 		"./theme-colors": {
 			"types": "./src/themes/types.ts",
@@ -392,6 +464,10 @@
 		"./page-storage-ticket": {
 			"types": "./src/page-storage-ticket.ts",
 			"default": "./src/page-storage-ticket.ts"
+		},
+		"./missing-procedure-error": {
+			"types": "./src/missing-procedure-error.ts",
+			"default": "./src/missing-procedure-error.ts"
 		}
 	},
 	"scripts": {
@@ -409,6 +485,7 @@
 		"jose": "6.2.2",
 		"rrule": "2.8.1",
 		"semver": "7.7.4",
+		"smol-toml": "1.9.1",
 		"zod": "4.6.5"
 	},
 	"devDependencies": {
@@ -416,8 +493,8 @@
 		"@types/culori": "4.0.1",
 		"@types/friendly-words": "1.2.2",
 		"@types/semver": "7.7.1",
-		"@xterm/xterm": "6.1.0-beta.302",
-		"bun-types": "1.4.2",
+		"@xterm/xterm": "6.1.0-beta.315",
+		"bun-types": "1.4.3",
 		"typescript": "7.0.2"
 	}
 }

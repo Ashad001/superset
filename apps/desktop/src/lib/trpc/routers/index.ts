@@ -9,6 +9,7 @@ import { createChangesRouter } from "./changes";
 import { createClaudeUsageRouter } from "./claude-usage";
 import { createConfigRouter } from "./config";
 import { createDeviceRouter } from "./device";
+import { createDictationRouter } from "./dictation";
 import { createDownloadsRouter } from "./downloads";
 import { createExternalRouter } from "./external";
 import { createFilesystemRouter } from "./filesystem";
@@ -18,6 +19,7 @@ import { createKeyboardLayoutRouter } from "./keyboardLayout";
 import { createMenuRouter } from "./menu";
 import { createMigrationRouter } from "./migration";
 import { createNotificationsRouter } from "./notifications";
+import { createPaneLayoutRouter } from "./pane-layout/pane-layout";
 import { createPermissionsRouter } from "./permissions";
 import { createPluginsRouter } from "./plugins";
 import { createPortForwardsRouter } from "./port-forwards";
@@ -49,6 +51,7 @@ export const createAppRouter = (getWindow: () => BrowserWindow | null) => {
 		changes: createChangesRouter(),
 		filesystem: createFilesystemRouter(),
 		notifications: createNotificationsRouter(getWindow),
+		paneLayout: createPaneLayoutRouter(),
 		permissions: createPermissionsRouter(),
 		plugins: createPluginsRouter(),
 		ports: createPortsRouter(),
@@ -62,6 +65,7 @@ export const createAppRouter = (getWindow: () => BrowserWindow | null) => {
 		system: createSystemRouter(),
 		config: createConfigRouter(),
 		device: createDeviceRouter(),
+		dictation: createDictationRouter(),
 		uiState: createUiStateRouter(),
 		ringtone: createRingtoneRouter(getWindow),
 		hostServiceCoordinator: createHostServiceCoordinatorRouter(),

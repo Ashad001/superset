@@ -1,5 +1,7 @@
 import type { UserContent } from "@superset/chat/protocol";
+import type { WorkspaceStore } from "@superset/panes";
 import type { AgentIdentityId } from "@superset/shared/agent-catalog";
+import type { StoreApi } from "zustand/vanilla";
 export interface FilePosition {
 	line: number;
 	column?: number;
@@ -77,8 +79,20 @@ export interface PagePaneData {
 	title?: string;
 }
 
+export const PENDING_CLOUD_CHAT_PANE_KIND = "pending-cloud-chat";
+
+export interface PendingCloudChatPaneData {
+	draftId: string;
+	agentId: string;
+	promptHash: string;
+	queuedPrompts?: UserContent[][];
+	chatModelId?: string;
+	chatModeId?: string;
+}
+
 export interface ChatPaneData {
 	terminalId: string;
+	draftId?: string;
 	sessionId: string | null;
 	agent?: {
 		id: string;
@@ -135,6 +149,7 @@ export interface SubagentPaneData {
 }
 
 export type WorkspaceSearchKey =
+	| "sessionId"
 	| "terminalId"
 	| "focusRequestId"
 	| "subagentTerminalId"
@@ -153,10 +168,16 @@ export type WorkspaceSearchKey =
  */
 export type ConsumeSearch = (keys: WorkspaceSearchKey[]) => void;
 
+export interface PaneTarget {
+	store: StoreApi<WorkspaceStore<PaneViewerData>>;
+	reveal: () => void;
+}
+
 export type PaneViewerData =
 	| FilePaneData
 	| TerminalPaneData
 	| ChatPaneData
+	| PendingCloudChatPaneData
 	| BrowserPaneData
 	| DevtoolsPaneData
 	| DiffPaneData

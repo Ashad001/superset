@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import type { OutboxEntry, TurnGroup } from "@superset/chat/core";
+import {
+	collapseWorkLog,
+	type OutboxEntry,
+	type TurnGroup,
+} from "@superset/chat/core";
 import type {
 	ApprovalRequest,
+	Item,
 	ToolCall,
 	UserMessage,
 } from "@superset/chat/protocol";
@@ -122,52 +127,145 @@ describe("transcriptRows", () => {
 		expect(rows[0]?.groupStart).toBe(true);
 	});
 
-	test("a tool run collapses once the turn moves past it, not before", () => {
-		const tool = (id: string, status: "running" | "completed") => ({
+	test("a message sent mid-turn moves the clock under it", () => {
+		const steer = { ...prompt, id: "u2", clientId: "c2" };
+		const rows = transcriptRows(
+			[
+				{
+					turnId: "t1",
+					turn: { id: "t1", status: "running", startedAtMs: 2 },
+					entries: [
+						{ kind: "item", item: prompt },
+						{ kind: "item", item: publish("b1", 3) },
+						{ kind: "item", item: steer },
+					],
+				},
+			],
+			[],
+			new Set(),
+			find,
+		);
+		expect(rows.map((row) => row.kind)).toEqual([
+			"item",
+			"item",
+			"item",
+			"working",
+		]);
+	});
+
+	test("thinking between tool calls folds into one run, and a lone call stays a row", () => {
+		const thought = (id: string, startedAtMs: number) => ({
 			id,
-			kind: "tool_call" as const,
-			title: id,
-			toolKind: "execute" as const,
-			toolName: "Bash",
-			status,
-			content: [],
-			startedAtMs: 3,
+			kind: "reasoning" as const,
+			text: "thinking",
+			startedAtMs,
 		});
-		const reply = {
-			kind: "item" as const,
-			item: {
-				id: "a1",
-				kind: "agent_message" as const,
-				text: "ok",
-				startedAtMs: 4,
-			},
-		};
-		const running = { id: "t1", status: "running" as const, startedAtMs: 2 };
-		const collapsedFlags = (entries: TurnGroup["entries"]) =>
+		const steps = (items: Item[]) =>
 			transcriptRows(
-				[{ turnId: "t1", turn: running, entries }],
+				[
+					{
+						turnId: "t1",
+						turn: { id: "t1", status: "completed", startedAtMs: 1 },
+						entries: collapseWorkLog(items),
+					},
+				],
 				[],
 				new Set(),
+				find,
+			).flatMap((row) =>
+				row.kind === "tool_run"
+					? [row.steps.map((step) => step.id).join(" ")]
+					: row.kind === "item"
+						? [row.item.id]
+						: [],
+			);
+
+		expect(
+			steps([
+				thought("r1", 2),
+				publish("b1", 3),
+				thought("r2", 4),
+				publish("b2", 5),
+				thought("r3", 6),
+			]),
+		).toEqual(["r1", "b1 r2 b2 r3"]);
+		expect(steps([publish("b1", 3)])).toEqual(["b1"]);
+	});
+
+	test("a tool run starts collapsed unless it waits on an approval", () => {
+		const running = { id: "t1", status: "running" as const, startedAtMs: 2 };
+		const collapsedFlags = (pendingApprovalTargets: ReadonlySet<string>) =>
+			transcriptRows(
+				[
+					{
+						turnId: "t1",
+						turn: running,
+						entries: [
+							{
+								kind: "tool_run",
+								items: [
+									{
+										id: "b1",
+										kind: "tool_call",
+										title: "b1",
+										toolKind: "execute",
+										toolName: "Bash",
+										status: "running",
+										content: [],
+										startedAtMs: 3,
+									},
+									publish("b2", 4),
+								],
+							},
+						],
+					},
+				],
+				[],
+				pendingApprovalTargets,
 				find,
 			)
 				.filter((row) => row.kind === "tool_run")
 				.map((row) => row.kind === "tool_run" && row.defaultCollapsed);
 
-		expect(
-			collapsedFlags([{ kind: "tool_run", items: [tool("b1", "completed")] }]),
-		).toEqual([false]);
-		expect(
-			collapsedFlags([
-				{ kind: "tool_run", items: [tool("b1", "completed")] },
-				reply,
-			]),
-		).toEqual([true]);
-		expect(
-			collapsedFlags([
-				{ kind: "tool_run", items: [tool("b1", "running")] },
-				reply,
-			]),
-		).toEqual([false]);
+		expect(collapsedFlags(new Set())).toEqual([true]);
+		expect(collapsedFlags(new Set(["b1"]))).toEqual([false]);
+	});
+
+	test("only a running turn's last row, when it is a tool run, is active", () => {
+		const activeFlags = (
+			status: "running" | "completed",
+			after: TurnGroup["entries"],
+		) =>
+			transcriptRows(
+				[
+					{
+						turnId: "t1",
+						turn: { id: "t1", status, startedAtMs: 2 },
+						entries: [
+							{ kind: "tool_run", items: [publish("b1", 3), publish("b2", 4)] },
+							...after,
+						],
+					},
+				],
+				[],
+				new Set(),
+				find,
+			)
+				.filter((row) => row.kind === "tool_run")
+				.map((row) => row.kind === "tool_run" && row.active === true);
+		const reply: TurnGroup["entries"][number] = {
+			kind: "item",
+			item: {
+				id: "a1",
+				kind: "agent_message",
+				text: "done",
+				startedAtMs: 5,
+			},
+		};
+
+		expect(activeFlags("running", [])).toEqual([true]);
+		expect(activeFlags("completed", [])).toEqual([false]);
+		expect(activeFlags("running", [reply])).toEqual([false]);
 	});
 
 	test("a settled turn shows a page its tool run printed and its reply did not link", () => {
@@ -236,4 +334,45 @@ describe("transcriptRows", () => {
 			"quarterly-report-a3f9k",
 		);
 	});
+});
+
+test("a subagent's task call leaves its tool run", () => {
+	const tool = (id: string): ToolCall => ({
+		id,
+		kind: "tool_call",
+		title: id,
+		toolKind: "read",
+		toolName: "read",
+		status: "completed",
+		content: [],
+		startedAtMs: 1,
+	});
+	const rows = transcriptRows(
+		[
+			{
+				turnId: "t1",
+				turn: null,
+				entries: [
+					{
+						kind: "tool_run",
+						items: [tool("r1"), tool("r2"), tool("task-1"), tool("r3")],
+					},
+				],
+			},
+		],
+		[],
+		new Set(),
+		find,
+		new Set(),
+		(each) => each.id === "task-1",
+	);
+	expect(
+		rows.map((row) =>
+			row.kind === "tool_run"
+				? row.items.map((each) => each.id)
+				: row.kind === "item"
+					? row.item.id
+					: row.kind,
+		),
+	).toEqual([["r1", "r2"], "task-1", "r3"]);
 });

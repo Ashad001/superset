@@ -37,6 +37,7 @@ import {
 } from "renderer/lib/pierreTree";
 import { PierreRowContextMenu } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/components/PierreRowContextMenu";
 import { useOpenInExternalEditor } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/hooks/useOpenInExternalEditor";
+import { setFileDragData } from "../../utils/setFileDragData";
 import { FileMenuItems } from "./components/FileMenuItems";
 import { FilesTabDropOverlay } from "./components/FilesTabDropOverlay";
 import { FilesTabHeaderButton } from "./components/FilesTabHeaderButton";
@@ -189,6 +190,26 @@ export function FilesTab({
 
 	const drop = useFilesTabDrop({ model, bridge, rootPath, workspaceId });
 
+	// Pierre stamps its own drag with the tree-relative path and
+	// `effectAllowed = "move"`, which terminals (dropEffect "copy") reject.
+	const handleRowDragStart = useCallback(
+		(event: React.DragEvent<HTMLDivElement>) => {
+			if (event.defaultPrevented || !rootPath) return;
+			for (const node of event.nativeEvent.composedPath()) {
+				if (!(node instanceof HTMLElement)) continue;
+				const treePath = node.getAttribute("data-item-path");
+				if (!treePath) continue;
+				setFileDragData(
+					event.dataTransfer,
+					toAbs(rootPath, treePath),
+					"copyMove",
+				);
+				return;
+			}
+		},
+		[rootPath],
+	);
+
 	// Push live git status updates into Pierre.
 	useEffect(() => {
 		model.setGitStatus(
@@ -290,7 +311,7 @@ export function FilesTab({
 
 	if (!rootPath) {
 		return (
-			<div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+			<div className="flex h-full w-full items-center justify-center gap-2 text-sm text-muted-foreground">
 				{workspaceQuery.isLoading ? (
 					<>
 						<Loader2 className="size-3.5 animate-spin" />
@@ -315,6 +336,7 @@ export function FilesTab({
 			className="relative flex h-full min-h-0 flex-col overflow-hidden"
 			onClickCapture={handleClickCapture}
 			onClick={handleTreeBackgroundClick}
+			onDragStart={handleRowDragStart}
 			onDragOver={drop.onDragOver}
 			onDragLeave={drop.onDragLeave}
 			onDrop={drop.onDrop}

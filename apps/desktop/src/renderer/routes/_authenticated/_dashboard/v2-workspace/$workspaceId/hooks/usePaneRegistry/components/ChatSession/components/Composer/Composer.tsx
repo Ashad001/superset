@@ -1,46 +1,75 @@
-import { useLingui } from "@lingui/react/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
+import { appendPastedText } from "@superset/chat/core";
 import type {
 	AvailableCommand,
 	SessionConfigOption,
 	UserContent,
-	UserMessage,
 } from "@superset/chat/protocol";
 import type {
+	ComposerChip,
 	ComposerMentionEntry,
 	ComposerMentionProvider,
 	PromptInputCommand,
 	PromptInputHandle,
+	PromptInputSubmitPayload,
 } from "@superset/chat-ui/PromptInput";
+import { usePaneFocus } from "@superset/panes";
+import { toast } from "@superset/ui/sonner";
 import { cn } from "@superset/ui/utils";
 import { workspaceTrpc } from "@superset/workspace-client";
+import { History } from "lucide-react";
 import {
 	memo,
-	type KeyboardEvent as ReactKeyboardEvent,
 	type Ref,
 	useCallback,
 	useEffect,
+	useId,
 	useImperativeHandle,
 	useLayoutEffect,
 	useMemo,
 	useRef,
 } from "react";
+import { env } from "renderer/env.renderer";
 import { useHotkey } from "renderer/hotkeys";
+import { cloudTrpc } from "renderer/lib/cloud-trpc";
+import { pagesListInput } from "renderer/routes/_authenticated/_dashboard/utils/pagesListInput";
 import { AgentComposer } from "renderer/routes/_authenticated/components/AgentComposer";
+import { useChatComposerStore } from "../../../../stores/chatComposerStore";
 import { CHAT_COLUMN_CLASSNAME, CHAT_GUTTER_CLASSNAME } from "../../constants";
+import { commandChip, LEADING_COMMAND } from "../../utils/commandChip";
+import { mcpContextLine } from "../../utils/mcpServerChips";
+import { elementsForChips } from "../../utils/messageElements";
 import { type AgentSwitcher, ModelPicker } from "./components/ModelPicker";
 import { ModePicker, type SessionMode } from "./components/ModePicker";
-import { QueuedPrompts } from "./components/QueuedPrompts";
+import { useAttachmentPreview } from "./hooks/useAttachmentPreview";
 import {
 	takeRecoveredDraftText,
 	useComposerDraft,
 } from "./hooks/useComposerDraft";
-import { useQueueActions } from "./hooks/useQueueActions";
+import { useDrawerEntry } from "./hooks/useDrawerEntry";
+import { useFooterTier } from "./hooks/useFooterTier";
+import { useMcpServerPicker } from "./hooks/useMcpServerPicker";
 import { useUploadAttachments } from "./hooks/useUploadAttachments";
+
+export type ComposerTarget = {
+	name: string;
+	disabledReason?: string;
+	onStop?: () => void;
+};
+
+export type ComposerHandle = Pick<
+	PromptInputHandle,
+	"appendText" | "addFiles" | "focus"
+> & {
+	returnFocus: (recallHistory?: boolean) => void;
+};
 
 export type ComposerProps = {
 	workspaceId: string;
+	presetId?: string;
 	draftKey: string;
-	inputRef?: Ref<Pick<PromptInputHandle, "appendText" | "focus">>;
+	draftPersisted?: boolean;
+	inputRef?: Ref<ComposerHandle>;
 	availableCommands: AvailableCommand[];
 	configOptions?: SessionConfigOption[];
 	onSetConfigOption?: (configId: string, value: string) => unknown;
@@ -49,36 +78,39 @@ export type ComposerProps = {
 	currentModeId?: string;
 	onSetMode?: (modeId: string) => void;
 	onSend: (content: UserContent[], options: { steer: boolean }) => unknown;
+	/** Opens the pane header's chat history picker, as `/resume` does. */
+	onOpenHistory?: () => void;
 	history?: string[];
 	isActive?: boolean;
 	placeholder?: string;
 	disabled?: boolean;
 	onCancelTurn?: (() => void) | null;
-	promptQueue?: {
-		prompts: UserMessage[];
-		paused: boolean;
-		actionable: boolean;
-		remove: (itemId: string) => Promise<void>;
-		resume: () => Promise<void>;
-		steer: (itemId: string) => Promise<void>;
-	};
+	target?: ComposerTarget;
+	canQueue?: boolean;
+	escapeGoesBack?: boolean;
+	onEnterDrawer?: (options: { actionableOnly: boolean }) => boolean;
 };
+
+const HIDDEN_AGENT_COMMANDS = new Set(["rewind"]);
 
 /**
  * The agent's own slash commands, in the shape the composer's menu takes.
  * Selecting one inserts a chip that serializes back to `/name`, so what the
  * agent receives is the command it advertised.
  */
-function toMenuCommands(commands: AvailableCommand[]): PromptInputCommand[] {
+function toMenuCommands(
+	commands: AvailableCommand[],
+	groups: { commands: string; mcp: string },
+): PromptInputCommand[] {
 	return commands.map((command) => ({
 		id: command.name,
 		title: `/${command.name}`,
-		description: command.description ?? command.hint ?? "",
-		onSelect: (ctx) =>
-			ctx.insertChip({
-				label: `/${command.name}`,
-				serialized: `/${command.name}`,
-			}),
+		...(command.hint ? { hint: command.hint } : {}),
+		description: command.description ?? "",
+		group: command.category === "mcp" ? groups.mcp : groups.commands,
+		onSelect: (ctx) => {
+			ctx.insertChip(commandChip(command.name, command.description));
+		},
 	}));
 }
 
@@ -86,39 +118,76 @@ const FOCUS_HANDOFF_MS = 1000;
 let focusHandoff: { draftKey: string; at: number } | null = null;
 
 export const Composer = memo(function Composer({
+	presetId,
 	agentSwitcher,
 	availableCommands,
+	canQueue = false,
 	configOptions,
+	escapeGoesBack = false,
 	currentModeId,
 	modes,
 	onSetConfigOption,
 	onSetMode,
 	disabled,
 	draftKey,
+	draftPersisted = true,
 	inputRef,
 	history,
 	isActive,
 	onCancelTurn,
+	onEnterDrawer,
 	onSend,
+	onOpenHistory,
 	placeholder,
-	promptQueue,
+	target,
 	workspaceId,
 }: ComposerProps) {
 	const { t } = useLingui();
+	const blocked = disabled || target?.disabledReason !== undefined;
+	const stop = target ? target.onStop : (onCancelTurn ?? undefined);
+	const queueing = !target && canQueue;
+	const name = target?.name ?? "";
 	const trpcUtils = workspaceTrpc.useUtils();
+	const cloudUtils = cloudTrpc.useUtils();
 	const uploadAttachments = useUploadAttachments(workspaceId);
-	const { storedDraft, onChange, clearDraft } = useComposerDraft(draftKey);
+	const attachmentPreview = useAttachmentPreview();
+	const { storedDraft, onChange, clearDraft } = useComposerDraft(
+		draftKey,
+		draftPersisted,
+	);
 	const promptInputRef = useRef<PromptInputHandle>(null);
-	const queueActions = useQueueActions(promptQueue, promptInputRef);
+	const focusInput = useCallback(() => promptInputRef.current?.focus(), []);
+	const recallHistory = useCallback(
+		() => promptInputRef.current?.recallPreviousPrompt(),
+		[],
+	);
+	const drawerEntry = useDrawerEntry({
+		enterDrawer: onEnterDrawer,
+		focusComposer: focusInput,
+		recallHistory,
+	});
+	const { returnFocus } = drawerEntry;
+	const mcpPicker = useMcpServerPicker({ workspaceId, presetId });
 	useImperativeHandle(
 		inputRef,
 		() => ({
 			appendText: (text: string) => promptInputRef.current?.appendText(text),
-			focus: () => promptInputRef.current?.focus(),
+			addFiles: (files: File[]) => promptInputRef.current?.addFiles(files),
+			focus: focusInput,
+			returnFocus,
 		}),
-		[],
+		[focusInput, returnFocus],
 	);
 	const rootRef = useRef<HTMLDivElement>(null);
+	const footerTier = useFooterTier(rootRef);
+	const composerId = useId();
+	useEffect(() => {
+		const { register, unregister } = useChatComposerStore.getState();
+		register(composerId, workspaceId, {
+			addFiles: (files) => promptInputRef.current?.addFiles(files),
+		});
+		return () => unregister(composerId);
+	}, [composerId, workspaceId]);
 	useEffect(() => {
 		const recovered = takeRecoveredDraftText(draftKey);
 		if (recovered) promptInputRef.current?.appendText(recovered);
@@ -140,6 +209,7 @@ export const Composer = memo(function Composer({
 			}
 		};
 	}, [draftKey]);
+	usePaneFocus(focusInput);
 	useHotkey("FOCUS_CHAT_INPUT", () => promptInputRef.current?.focus(), {
 		enabled: Boolean(isActive),
 	});
@@ -169,6 +239,7 @@ export const Composer = memo(function Composer({
 	}, [isActive]);
 	const searchFiles = useCallback(
 		async (query: string) => {
+			if (!query) return [];
 			const { matches } = await trpcUtils.filesystem.searchFiles.fetch({
 				workspaceId,
 				query,
@@ -185,11 +256,34 @@ export const Composer = memo(function Composer({
 						ctx.insertChip({
 							label: match.name,
 							serialized: match.relativePath,
+							data: { elementKind: "file_mention" },
 						}),
 				}),
 			);
 		},
 		[trpcUtils, workspaceId],
+	);
+
+	const searchPages = useCallback(
+		async (query: string) => {
+			const { items } = await cloudUtils.page.listPaginated.fetch(
+				pagesListInput({ search: query || undefined, limit: 20 }),
+			);
+			return items.map((page): ComposerMentionEntry => {
+				const url = new URL(
+					`/page/${encodeURIComponent(page.slug)}`,
+					env.NEXT_PUBLIC_WEB_URL,
+				).toString();
+				return {
+					id: page.id,
+					label: page.title,
+					description: page.slug,
+					select: (ctx) =>
+						ctx.insertChip({ label: page.title, serialized: url }),
+				};
+			});
+		},
+		[cloudUtils],
 	);
 
 	const mentionProviders = useMemo<ComposerMentionProvider[]>(
@@ -201,121 +295,217 @@ export const Composer = memo(function Composer({
 				source: {
 					kind: "search",
 					search: searchFiles,
-					emptyState: t({ message: "No matching files" }),
+					emptyState: t({ message: "Type to search files..." }),
+				},
+			},
+			{
+				id: "pages",
+				title: t({ message: "Pages" }),
+				priority: 2,
+				source: {
+					kind: "search",
+					search: searchPages,
+					emptyState: t({ message: "No pages yet" }),
 				},
 			},
 		],
-		[searchFiles, t],
+		[searchFiles, searchPages, t],
 	);
 
-	const commands = useMemo(
-		() => toMenuCommands(availableCommands),
-		[availableCommands],
+	const mcpCommand = mcpPicker.command;
+	const resumeCommand = useMemo<PromptInputCommand | null>(
+		() =>
+			onOpenHistory
+				? {
+						id: "superset:resume",
+						title: "/resume",
+						description: t({ message: "Chat history" }),
+						icon: <History className="size-4" />,
+						group: t({ message: "Commands" }),
+						onSelect: () => {
+							queueMicrotask(() => {
+								promptInputRef.current?.blur();
+								onOpenHistory();
+							});
+						},
+					}
+				: null,
+		[onOpenHistory, t],
 	);
+	const commands = useMemo(() => {
+		const local: PromptInputCommand[] = [
+			...(mcpCommand ? [mcpCommand] : []),
+			...(resumeCommand ? [resumeCommand] : []),
+		];
+		const agentCommands = toMenuCommands(
+			availableCommands.filter(
+				(command) =>
+					!(mcpCommand && command.name === "mcp") &&
+					!(resumeCommand && command.name === "resume") &&
+					!HIDDEN_AGENT_COMMANDS.has(command.name),
+			),
+			{
+				commands: t({ message: "Commands" }),
+				mcp: t({ message: "MCP Server Commands" }),
+			},
+		);
+		return [...local, ...agentCommands];
+	}, [availableCommands, mcpCommand, resumeCommand, t]);
 
-	const handleSubmit = useCallback(
-		async ({
-			text,
-			files,
-			steer,
-		}: {
-			text: string;
-			files: File[];
-			steer: boolean;
-		}) => {
-			if (disabled || (text.trim() === "" && files.length === 0)) return;
+	const send = useCallback(
+		async (
+			text: string,
+			files: File[],
+			mentions: ComposerChip[],
+			pastedTexts: string[],
+			steer: boolean,
+		) => {
 			const tags = await uploadAttachments(files);
 			if (!tags) {
-				promptInputRef.current?.appendText(text);
+				promptInputRef.current?.appendText(appendPastedText(text, pastedTexts));
 				return;
 			}
+			const message = text.trim();
+			const elements = elementsForChips(message, mentions);
+			const mcpContext = mcpContextLine(
+				mentions.flatMap((chip) => mcpPicker.serverNameOf(chip) ?? []),
+			);
 			onSend(
 				[
 					{
 						type: "text",
-						text: [text.trim(), ...tags].filter(Boolean).join("\n"),
+						text: appendPastedText(
+							[message, ...tags].filter(Boolean).join("\n"),
+							pastedTexts,
+						),
+						...(elements.length > 0 ? { elements } : {}),
 					},
+					...(mcpContext
+						? [{ type: "text" as const, text: mcpContext, hidden: true }]
+						: []),
 				],
 				{ steer },
 			);
 			clearDraft();
 		},
-		[disabled, onSend, uploadAttachments, clearDraft],
+		[onSend, uploadAttachments, clearDraft, mcpPicker.serverNameOf],
 	);
 
-	const queueListRef = useRef<HTMLUListElement>(null);
-	const focusQueue = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-		if (event.key !== "Tab" || !event.shiftKey || !promptQueue?.actionable)
-			return;
-		if (
-			!(event.target instanceof HTMLElement) ||
-			!event.target.closest(".prompt-input-editor")
-		)
-			return;
-		const rows =
-			queueListRef.current?.querySelectorAll<HTMLElement>("[data-queue-row]");
-		const newest = rows?.[rows.length - 1];
-		if (!newest) return;
-		event.preventDefault();
-		event.stopPropagation();
-		newest.focus();
-	};
+	const handleSubmit = useCallback(
+		({
+			text,
+			files,
+			mentions,
+			pastedTexts,
+			steer,
+		}: PromptInputSubmitPayload) => {
+			if (
+				blocked ||
+				(text.trim() === "" && files.length === 0 && pastedTexts.length === 0)
+			)
+				return;
+			const name = LEADING_COMMAND.exec(text.trim())?.[1];
+			const input = promptInputRef.current;
+			if (text.trim() === "/mcp" && mcpPicker.command && input) {
+				queueMicrotask(() =>
+					mcpPicker.open.current({
+						insertChip: input.insertChip,
+						attachFiles: input.openFileDialog,
+						openPanel: input.openPanel,
+						query: "",
+					}),
+				);
+				return;
+			}
+			if (
+				text.trim() === "/resume" &&
+				onOpenHistory &&
+				files.length === 0 &&
+				pastedTexts.length === 0
+			) {
+				queueMicrotask(() => {
+					input?.blur();
+					onOpenHistory();
+				});
+				return;
+			}
+			if (
+				name &&
+				!target &&
+				availableCommands.length > 0 &&
+				!availableCommands.some((command) => command.name === name)
+			) {
+				toast.error(t({ message: `Unknown command /${name}` }));
+				return false;
+			}
+			return send(text, files, mentions, pastedTexts, steer);
+		},
+		[availableCommands, blocked, send, t, target, mcpPicker, onOpenHistory],
+	);
 
 	return (
 		<div
 			ref={rootRef}
 			className={cn(CHAT_GUTTER_CLASSNAME, "pt-1 pb-5")}
-			onKeyDownCapture={focusQueue}
+			onKeyDownCapture={drawerEntry.onKeyDownCapture}
+			onFocusCapture={() =>
+				useChatComposerStore.getState().markActive(composerId)
+			}
 		>
-			{promptQueue && (
-				<div className={CHAT_COLUMN_CLASSNAME}>
-					<QueuedPrompts
-						{...queueActions}
-						actionable={promptQueue.actionable}
-						listRef={queueListRef}
-						onExit={() => promptInputRef.current?.focus()}
-						paused={promptQueue.paused}
-						prompts={promptQueue.prompts}
-					/>
-				</div>
-			)}
 			<AgentComposer
 				className={CHAT_COLUMN_CLASSNAME}
-				clearOnSubmit={!disabled}
+				clearOnSubmit={!blocked}
+				collapseLargePastes
 				commands={commands}
 				defaultValue={storedDraft}
+				findChips={mcpPicker.findChips}
 				history={history}
 				key={draftKey}
 				mentionProviders={mentionProviders}
+				onAttachmentClick={attachmentPreview.onAttachmentClick}
 				onChange={onChange}
-				onStop={onCancelTurn ?? undefined}
+				onStop={stop}
 				onSubmit={handleSubmit}
 				ref={promptInputRef}
 				placeholder={
-					placeholder ??
-					t({ message: "Ask the agent, @mention files, run /commands" })
+					target
+						? (target.disabledReason ?? t({ message: `Message ${name}…` }))
+						: (placeholder ??
+							t({ message: "Ask the agent, @mention files, run /commands" }))
 				}
-				status={onCancelTurn ? "streaming" : "ready"}
-				submitWhileStreaming={promptQueue !== undefined}
+				status={stop ? "streaming" : "ready"}
+				stopOnEscape={!escapeGoesBack}
+				submitWhileStreaming={target !== undefined || queueing}
 				toolbar={
-					<div className="flex min-w-0 items-center gap-1">
-						{configOptions && onSetConfigOption ? (
-							<ModelPicker
-								agentSwitcher={agentSwitcher}
-								configOptions={configOptions}
-								onSelect={onSetConfigOption}
-							/>
-						) : null}
-						{modes && onSetMode ? (
-							<ModePicker
-								currentModeId={currentModeId}
-								modes={modes}
-								onSelect={onSetMode}
-							/>
-						) : null}
-					</div>
+					target ? (
+						<span className="flex h-6 min-w-0 max-w-48 items-center rounded-md border border-border/60 px-2 font-sans text-foreground/70 text-xs">
+							<span className="min-w-0 truncate">
+								<Trans>to {name}</Trans>
+							</span>
+						</span>
+					) : modes && onSetMode ? (
+						<ModePicker
+							currentModeId={currentModeId}
+							iconOnly={footerTier >= 2}
+							modes={modes}
+							onSelect={onSetMode}
+						/>
+					) : undefined
+				}
+				toolbarEnd={
+					!target && configOptions && onSetConfigOption ? (
+						<ModelPicker
+							agentSwitcher={agentSwitcher}
+							configOptions={configOptions}
+							hideEffortLabel={footerTier >= 1}
+							hideModelLabel={footerTier >= 3}
+							onSelect={onSetConfigOption}
+						/>
+					) : undefined
 				}
 			/>
+			{attachmentPreview.overlay}
+			{mcpPicker.dialog}
 		</div>
 	);
 });

@@ -8,6 +8,7 @@ const FILE_LABELS: Record<LinkAction, MessageDescriptor> = {
 	newTab: msg({ message: "Open in new tab" }),
 	external: msg({ message: "Open in editor" }),
 	system: msg({ message: "Open in default app" }),
+	rightPane: msg({ message: "Open in right pane" }),
 };
 
 // "system" isn't offered for URLs — the OS handler for a URL is the default
@@ -18,6 +19,7 @@ const URL_LABELS: Record<LinkAction, MessageDescriptor> = {
 	newTab: msg({ message: "Open in new tab" }),
 	external: msg({ message: "Open in external browser" }),
 	system: msg({ message: "Open in external browser" }),
+	rightPane: msg({ message: "Open in right pane" }),
 };
 
 // A pasted image has no editor worth opening it in, so "external" means the OS
@@ -27,6 +29,7 @@ const IMAGE_LABELS: Record<LinkAction, MessageDescriptor> = {
 	newTab: msg({ message: "Open in new tab" }),
 	external: msg({ message: "Open in default app" }),
 	system: msg({ message: "Open in default app" }),
+	rightPane: msg({ message: "Open in right pane" }),
 };
 
 export function actionLabel(action: LinkAction, surface: Surface): string {
@@ -49,6 +52,7 @@ const SHORT_FILE_LABELS: Record<LinkAction, MessageDescriptor> = {
 	newTab: msg({ message: "new tab" }),
 	external: msg({ message: "editor" }),
 	system: msg({ message: "default app" }),
+	rightPane: msg({ message: "right pane" }),
 };
 
 const SHORT_URL_LABELS: Record<LinkAction, MessageDescriptor> = {
@@ -56,6 +60,7 @@ const SHORT_URL_LABELS: Record<LinkAction, MessageDescriptor> = {
 	newTab: msg({ message: "new tab" }),
 	external: msg({ message: "external browser" }),
 	system: msg({ message: "external browser" }),
+	rightPane: msg({ message: "right pane" }),
 };
 
 const SHORT_IMAGE_LABELS: Record<LinkAction, MessageDescriptor> = {
@@ -63,6 +68,7 @@ const SHORT_IMAGE_LABELS: Record<LinkAction, MessageDescriptor> = {
 	newTab: msg({ message: "new tab" }),
 	external: msg({ message: "default app" }),
 	system: msg({ message: "default app" }),
+	rightPane: msg({ message: "right pane" }),
 };
 
 export function shortActionLabel(action: LinkAction, surface: Surface): string {
