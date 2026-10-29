@@ -73,8 +73,22 @@ export class TerminalLinkManager {
 	private _resolver: TerminalLinkResolver | null = null;
 	private _handlers: TerminalLinkHandlers | null = null;
 	private _oscLinkHandler: ILinkHandler | null = null;
+	private _cwd: string | null = null;
+	private readonly _cwdHandler: LinkProviderDisposable;
 
-	constructor(private readonly _terminal: XTerm) {}
+	constructor(private readonly _terminal: XTerm) {
+		// Shell wrappers report the cwd with OSC 7 on every prompt. Without it a
+		// relative path printed by `ls` or `git status` is resolved against the
+		// workspace root, so nothing in a subdirectory is clickable.
+		this._cwdHandler = _terminal.parser.registerOscHandler(7, (data) => {
+			const cwd = parseOsc7Path(data);
+			if (cwd && cwd !== this._cwd) {
+				this._cwd = cwd;
+				this._resolver?.clearCache();
+			}
+			return false;
+		});
+	}
 
 	/**
 	 * Set link handlers and register providers. Safe to call multiple times —
@@ -99,6 +113,7 @@ export class TerminalLinkManager {
 	dispose(): void {
 		for (const d of this._disposables) d.dispose();
 		this._disposables = [];
+		this._cwdHandler.dispose();
 		this._clearOscLinkHandler();
 		this._resolver?.clearCache();
 		this._resolver = null;
@@ -123,7 +138,18 @@ export class TerminalLinkManager {
 
 		// Reuse resolver to preserve stat cache across re-registrations.
 		if (!this._resolver) {
-			this._resolver = new TerminalLinkResolver(handlers.stat);
+			const stat = handlers.stat;
+			this._resolver = new TerminalLinkResolver(async (path) => {
+				// cwd first, then the raw path — the host resolves that against the
+				// workspace root, which is what tools printing repo-relative paths
+				// mean no matter which directory the shell is in.
+				const anchored = this._againstCwd(path);
+				if (anchored !== path) {
+					const hit = await stat(anchored);
+					if (hit) return hit;
+				}
+				return stat(path);
+			});
 		}
 
 		const onLinkHover = handlers.onLinkHover;
@@ -231,5 +257,25 @@ export class TerminalLinkManager {
 			);
 			this._disposables.push(this._terminal.registerLinkProvider(wordDetector));
 		}
+	}
+
+	/** Anchor a relative candidate to the cwd the shell last reported. */
+	private _againstCwd(path: string): string {
+		const cwd = this._cwd;
+		if (!cwd?.startsWith("/") || path.startsWith("/") || path.startsWith("~")) {
+			return path;
+		}
+		return `${cwd.endsWith("/") ? cwd.slice(0, -1) : cwd}/${path}`;
+	}
+}
+
+/** OSC 7 payload: `file://<host><absolute path>`. */
+function parseOsc7Path(data: string): string | null {
+	const match = /^file:\/\/[^/]*(\/.*)$/.exec(data);
+	if (!match?.[1]) return null;
+	try {
+		return decodeURIComponent(match[1]);
+	} catch {
+		return match[1];
 	}
 }

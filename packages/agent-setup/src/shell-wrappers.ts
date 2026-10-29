@@ -206,6 +206,7 @@ rehash 2>/dev/null || true
 # Protocol ref: https://gitlab.freedesktop.org/Per_Bothner/specifications/blob/master/proposals/semantic-prompts.md
 __superset_prompt_mark() {
   printf "\\033]777;superset-shell-ready\\007\\033]133;A\\007"
+  printf "\\033]7;file://%s\\007" "$PWD"
 }
 # Keep our hook LAST so it fires after direnv and other precmd hooks complete.
 precmd_functions=(\${precmd_functions[@]} __superset_prompt_mark)
@@ -256,6 +257,7 @@ export PS1=$'\\[\\e[1;38;2;52;211;153m\\]❯\\[\\e[0m\\] '
 # Protocol ref: https://gitlab.freedesktop.org/Per_Bothner/specifications/blob/master/proposals/semantic-prompts.md
 __superset_prompt_mark() {
   printf "\\033]777;superset-shell-ready\\007\\033]133;A\\007"
+  printf "\\033]7;file://%s\\007" "$PWD"
 }
 # Hook via PROMPT_COMMAND. Supports both scalar and array forms (Bash 5.1+).
 if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
@@ -311,6 +313,7 @@ export function getShellArgs(
 				`or set -gx PATH "$_superset_bin" $PATH`,
 				`function _superset_prompt_mark --on-event fish_prompt`,
 				`printf '\\033]777;superset-shell-ready\\007\\033]133;A\\007'`,
+				`printf '\\033]7;file://%s\\007' "$PWD"`,
 				`end`,
 			].join("; "),
 		];

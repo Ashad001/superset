@@ -51,7 +51,8 @@ function fileContainsShellReadyMarker(filePath: string): boolean {
 
 /**
  * Matches desktop shell-wrappers.ts fish init: idempotent PATH prepend +
- * OSC 133;A prompt marker (FinalTerm standard) for shell readiness.
+ * OSC 133;A prompt marker (FinalTerm standard) for shell readiness, and the
+ * OSC 7 cwd report that terminal links resolve relative paths against.
  *
  * Protocol ref: https://gitlab.freedesktop.org/Per_Bothner/specifications/blob/master/proposals/semantic-prompts.md
  */
@@ -66,6 +67,7 @@ function buildFishInitCommand(binDir: string): string {
 		`or set -gx PATH "$_superset_bin" $PATH`,
 		`function _superset_prompt_mark --on-event fish_prompt`,
 		`printf '\\033]133;A\\007'`,
+		`printf '\\033]7;file://%s\\007' "$PWD"`,
 		`end`,
 	].join("; ");
 }

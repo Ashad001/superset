@@ -1,13 +1,39 @@
 import { describe, expect, it, mock } from "bun:test";
-import type { ILinkProvider, Terminal as XTerm } from "@xterm/xterm";
+import type { ILink, ILinkProvider, Terminal as XTerm } from "@xterm/xterm";
 import { TerminalLinkManager } from "./terminal-link-manager";
 
-function createMockTerminal() {
+const COLS = 80;
+
+function createMockLine(text: string) {
+	return {
+		translateToString: (trim?: boolean, start = 0, end = COLS) => {
+			const padded = text.padEnd(COLS).substring(start, end);
+			return trim ? padded.replace(/\s+$/, "") : padded;
+		},
+		isWrapped: false,
+		length: COLS,
+		getCell: (x: number) =>
+			({
+				getChars: () => (x < text.length ? text[x] : " "),
+				getWidth: () => 1,
+			}) as never,
+	};
+}
+
+function createMockTerminal(lines: string[] = []) {
 	const registeredProviders: ILinkProvider[] = [];
 	const disposedProviders: ILinkProvider[] = [];
+	const oscHandlers = new Map<number, (data: string) => boolean>();
+	const bufferLines = lines.map(createMockLine);
 	const terminal = {
 		options: {
 			linkHandler: null,
+		},
+		parser: {
+			registerOscHandler: (id: number, handler: (data: string) => boolean) => {
+				oscHandlers.set(id, handler);
+				return { dispose: () => oscHandlers.delete(id) };
+			},
 		},
 		registerLinkProvider: (provider: ILinkProvider) => {
 			registeredProviders.push(provider);
@@ -19,13 +45,15 @@ function createMockTerminal() {
 		},
 		buffer: {
 			active: {
-				getLine: () => null,
+				length: bufferLines.length,
+				getLine: (i: number) => bufferLines[i] ?? null,
+				viewportY: 0,
 			},
 		},
-		cols: 80,
+		cols: COLS,
 	} as unknown as XTerm;
 
-	return { terminal, registeredProviders, disposedProviders };
+	return { terminal, registeredProviders, disposedProviders, oscHandlers };
 }
 
 describe("TerminalLinkManager", () => {
@@ -141,6 +169,58 @@ describe("TerminalLinkManager", () => {
 
 		expect(terminal.options.linkHandler).toBeNull();
 		expect(disposedProviders.length).toBe(2);
+	});
+
+	it("resolves a relative path against the cwd the shell reports", async () => {
+		const { terminal, registeredProviders, oscHandlers } = createMockTerminal([
+			"src/App.tsx",
+		]);
+		const manager = new TerminalLinkManager(terminal);
+		const statted: string[] = [];
+
+		manager.setHandlers({
+			stat: async (path) => {
+				statted.push(path);
+				return path === "/work/pkg/src/App.tsx"
+					? { isDirectory: false, resolvedPath: path }
+					: null;
+			},
+			onFileLinkClick: mock(),
+		});
+
+		expect(oscHandlers.get(7)?.("file://host/work/pkg")).toBe(false);
+
+		const links = await new Promise<ILink[] | undefined>((resolve) => {
+			registeredProviders[0]?.provideLinks(1, resolve);
+		});
+
+		expect(statted).toContain("/work/pkg/src/App.tsx");
+		expect(links?.[0]?.text).toBe("src/App.tsx");
+	});
+
+	it("still links a path that only exists relative to the workspace root", async () => {
+		const { terminal, registeredProviders, oscHandlers } = createMockTerminal([
+			"apps/desktop/main.ts",
+		]);
+		const manager = new TerminalLinkManager(terminal);
+
+		manager.setHandlers({
+			// Only the unanchored path resolves — the host answers it against the
+			// workspace root, as tools printing repo-relative paths expect.
+			stat: async (path) =>
+				path === "apps/desktop/main.ts"
+					? { isDirectory: false, resolvedPath: "/work/apps/desktop/main.ts" }
+					: null,
+			onFileLinkClick: mock(),
+		});
+
+		oscHandlers.get(7)?.("file://host/work/apps/desktop");
+
+		const links = await new Promise<ILink[] | undefined>((resolve) => {
+			registeredProviders[0]?.provideLinks(1, resolve);
+		});
+
+		expect(links?.[0]?.text).toBe("apps/desktop/main.ts");
 	});
 
 	it("does not clear a link handler installed by another owner", () => {
