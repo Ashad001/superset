@@ -667,7 +667,11 @@ export const HOTKEYS_REGISTRY = {
 		}),
 	},
 	FOCUS_PANE_LEFT: {
-		key: { mac: null, windows: null, linux: null },
+		key: {
+			mac: "ctrl+meta+left",
+			windows: "ctrl+alt+left",
+			linux: "ctrl+alt+left",
+		},
 		label: msg({
 			message: "Focus Pane Left",
 		}),
@@ -677,7 +681,11 @@ export const HOTKEYS_REGISTRY = {
 		}),
 	},
 	FOCUS_PANE_RIGHT: {
-		key: { mac: null, windows: null, linux: null },
+		key: {
+			mac: "ctrl+meta+right",
+			windows: "ctrl+alt+right",
+			linux: "ctrl+alt+right",
+		},
 		label: msg({
 			message: "Focus Pane Right",
 		}),
@@ -687,7 +695,11 @@ export const HOTKEYS_REGISTRY = {
 		}),
 	},
 	FOCUS_PANE_UP: {
-		key: { mac: null, windows: null, linux: null },
+		key: {
+			mac: "ctrl+meta+up",
+			windows: "ctrl+alt+up",
+			linux: "ctrl+alt+up",
+		},
 		label: msg({ message: "Focus Pane Up" }),
 		category: "Layout",
 		description: msg({
@@ -695,7 +707,11 @@ export const HOTKEYS_REGISTRY = {
 		}),
 	},
 	FOCUS_PANE_DOWN: {
-		key: { mac: null, windows: null, linux: null },
+		key: {
+			mac: "ctrl+meta+down",
+			windows: "ctrl+alt+down",
+			linux: "ctrl+alt+down",
+		},
 		label: msg({
 			message: "Focus Pane Down",
 		}),
