@@ -72,6 +72,9 @@ const IMAGE_MIME_TYPE_EXTENSIONS: Record<string, string> = {
 /** Markdown extensions */
 const MARKDOWN_EXTENSIONS = new Set(["md", "markdown", "mdx"]);
 
+/** HTML extensions */
+const HTML_EXTENSIONS = new Set(["html", "htm"]);
+
 /**
  * Checks if a file is a PDF based on extension
  */
@@ -148,6 +151,13 @@ export function parseBase64DataUrl(dataUrl: string): {
  */
 export function isMarkdownFile(filePath: string): boolean {
 	return MARKDOWN_EXTENSIONS.has(getFileExtension(filePath));
+}
+
+/**
+ * Checks if a file is HTML based on extension
+ */
+export function isHtmlFile(filePath: string): boolean {
+	return HTML_EXTENSIONS.has(getFileExtension(filePath));
 }
 
 /**

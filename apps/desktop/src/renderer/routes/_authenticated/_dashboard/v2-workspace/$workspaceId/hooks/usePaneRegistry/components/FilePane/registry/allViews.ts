@@ -1,6 +1,7 @@
 import type { FileView } from "./types";
 import { binaryWarningView } from "./views/BinaryWarningView";
 import { codeView } from "./views/CodeView";
+import { htmlPreviewView } from "./views/HtmlPreviewView";
 import { imageView } from "./views/ImageView";
 import { markdownPreviewView } from "./views/MarkdownPreviewView";
 import { pdfView } from "./views/PdfView";
@@ -14,5 +15,6 @@ export const ALL_VIEWS: FileView[] = [
 	pdfView,
 	binaryWarningView,
 	markdownPreviewView,
+	htmlPreviewView,
 	codeView,
 ];
