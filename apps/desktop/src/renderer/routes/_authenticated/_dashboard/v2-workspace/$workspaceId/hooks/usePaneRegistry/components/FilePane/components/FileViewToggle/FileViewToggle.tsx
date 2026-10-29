@@ -30,7 +30,11 @@ export function FileViewToggle({
 								? "bg-background text-foreground shadow-sm"
 								: "text-muted-foreground hover:text-foreground",
 						)}
-						onClick={() => onChange(view.id)}
+						onClick={(e) => {
+							// The pane header pins on click; switching view is not that.
+							e.stopPropagation();
+							onChange(view.id);
+						}}
 					>
 						<span className="min-w-0 truncate">{label}</span>
 					</button>
